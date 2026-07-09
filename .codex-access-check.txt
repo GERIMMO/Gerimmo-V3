@@ -1,2 +1,0 @@
-Codex access check
-Created temporarily to verify repository write permissions.
