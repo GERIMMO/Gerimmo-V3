@@ -1,5 +1,5 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { IncidentsModule } from "./_components/incidents-module";
 
-export default function Page() {
-  return <ModulePlaceholder title="Incidents" />;
+export default function IncidentsPage() {
+  return <IncidentsModule />;
 }
