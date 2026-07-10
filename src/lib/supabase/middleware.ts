@@ -9,7 +9,7 @@ function getSupabaseMiddlewareConfig() {
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_PUBLISHABLE_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error("Missing Supabase middleware environment variables.");
+    return null;
   }
 
   return { supabaseUrl, supabaseAnonKey };
@@ -19,7 +19,13 @@ export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({
     request,
   });
-  const { supabaseUrl, supabaseAnonKey } = getSupabaseMiddlewareConfig();
+  const config = getSupabaseMiddlewareConfig();
+
+  if (!config) {
+    return response;
+  }
+
+  const { supabaseUrl, supabaseAnonKey } = config;
 
   const supabase = createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
