@@ -1,5 +1,5 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { PatrimoineModule } from "./_components/patrimoine-module";
 
 export default function Page() {
-  return <ModulePlaceholder title="Biens" />;
+  return <PatrimoineModule />;
 }
