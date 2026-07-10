@@ -1,0 +1,101 @@
+import { createClient } from "@/lib/supabase/server";
+import type {
+  Bien,
+  BienEcheance,
+  BienHistorique,
+  BienOccupant,
+  CreateBienInput,
+  CreatePatrimoineInput,
+  CreateResidenceInput,
+  Patrimoine,
+  PatrimoinePayload,
+  Residence,
+  UpdateBienInput,
+} from "@/types/patrimoine";
+
+export async function listPatrimoine(): Promise<PatrimoinePayload> {
+  const supabase = await createClient();
+  const [patrimoines, residences, biens, occupants, echeances, historique] = await Promise.all([
+    supabase.from("patrimoines").select("*").is("archived_at", null).order("name"),
+    supabase.from("residences").select("*").is("archived_at", null).order("name"),
+    supabase.from("biens").select("*").order("updated_at", { ascending: false }),
+    supabase.from("bien_occupants").select("id,bien_id,full_name,occupant_type,started_at,ended_at").is("archived_at", null),
+    supabase.from("bien_echeances").select("id,bien_id,title,due_date,status,amount_cents").is("archived_at", null).order("due_date"),
+    supabase.from("bien_history").select("id,bien_id,action,created_at").order("created_at", { ascending: false }).limit(200),
+  ]);
+
+  for (const result of [patrimoines, residences, biens, occupants, echeances, historique]) {
+    if (result.error) {
+      throw result.error;
+    }
+  }
+
+  return {
+    patrimoines: (patrimoines.data ?? []) as Patrimoine[],
+    residences: (residences.data ?? []) as Residence[],
+    biens: (biens.data ?? []) as Bien[],
+    occupants: (occupants.data ?? []) as BienOccupant[],
+    echeances: (echeances.data ?? []) as BienEcheance[],
+    historique: (historique.data ?? []) as BienHistorique[],
+  };
+}
+
+export async function createPatrimoine(input: CreatePatrimoineInput) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("patrimoines").insert(input as never).select("*").single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Patrimoine;
+}
+
+export async function createResidence(input: CreateResidenceInput) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("residences").insert(input as never).select("*").single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Residence;
+}
+
+export async function createBien(input: CreateBienInput) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("biens").insert(input as never).select("*").single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Bien;
+}
+
+export async function updateBien({ id, ...input }: UpdateBienInput) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("biens").update(input as never).eq("id", id).select("*").single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Bien;
+}
+
+export async function archiveBien(id: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("biens")
+    .update({ archived_at: new Date().toISOString(), status: "archive" } as never)
+    .eq("id", id)
+    .select("*")
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Bien;
+}
