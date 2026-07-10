@@ -63,8 +63,7 @@ type PermissionRow = {
   key: string;
   name: string;
   description: string | null;
-  domain: string;
-  action: string;
+  category: string;
   is_system: boolean;
   created_at: string;
   updated_at: string;
@@ -84,7 +83,8 @@ type MemberRoleAssignmentRow = {
   organization_member_id: string;
   role_id: string;
   assigned_by: string | null;
-  assigned_at: string;
+  created_at: string;
+  updated_at: string;
   archived_at: string | null;
   archived_by: string | null;
 };
@@ -98,7 +98,8 @@ type AuditLogRow = {
   record_id: string | null;
   old_values: Json | null;
   new_values: Json | null;
-  metadata: Json;
+  ip_address: string | null;
+  user_agent: string | null;
   created_at: string;
 };
 
@@ -132,8 +133,8 @@ export type Database = {
       >;
       member_role_assignments: FoundationTable<
         MemberRoleAssignmentRow,
-        Omit<MemberRoleAssignmentRow, "id" | "assigned_at" | "archived_at" | "archived_by"> &
-          Partial<Pick<MemberRoleAssignmentRow, "id" | "assigned_at" | "archived_at" | "archived_by">>
+        Omit<MemberRoleAssignmentRow, "id" | "created_at" | "updated_at" | "archived_at" | "archived_by"> &
+          Partial<Pick<MemberRoleAssignmentRow, "id" | "created_at" | "updated_at" | "archived_at" | "archived_by">>
       >;
       audit_logs: FoundationTable<
         AuditLogRow,
@@ -142,19 +143,40 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
-      audit_row_change: {
+      audit_table_changes: {
         Args: Record<string, never>;
         Returns: unknown;
+      };
+      can_access_organization_member: {
+        Args: {
+          target_member_id: string;
+        };
+        Returns: boolean;
+      };
+      can_access_profile: {
+        Args: {
+          target_profile_id: string;
+        };
+        Returns: boolean;
+      };
+      can_manage_organization: {
+        Args: {
+          target_organization_id: string;
+        };
+        Returns: boolean;
       };
       current_profile_id: {
         Args: Record<string, never>;
         Returns: string | null;
       };
-      handle_updated_at: {
-        Args: Record<string, never>;
-        Returns: unknown;
+      has_organization_role: {
+        Args: {
+          role_keys: string[];
+          target_organization_id: string;
+        };
+        Returns: boolean;
       };
-      is_member_of_organization: {
+      is_active_organization_member: {
         Args: {
           target_organization_id: string;
         };
@@ -163,6 +185,10 @@ export type Database = {
       is_super_admin: {
         Args: Record<string, never>;
         Returns: boolean;
+      };
+      set_updated_at: {
+        Args: Record<string, never>;
+        Returns: unknown;
       };
     };
     Enums: Record<string, never>;
