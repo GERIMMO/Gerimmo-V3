@@ -1,5 +1,5 @@
 export type IncidentPriority = "basse" | "normale" | "haute" | "urgente";
-export type IncidentStatus = "nouveau" | "en_cours" | "archive";
+export type IncidentStatus = "nouveau" | "en_cours" | "cloture" | "archive";
 
 export type IncidentPhoto = {
   name: string;
