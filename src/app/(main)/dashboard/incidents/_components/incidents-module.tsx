@@ -85,7 +85,7 @@ const initialEvents: IncidentEvent[] = [
 ];
 
 const priorityLabels: Record<IncidentPriority, string> = { basse: "Basse", normale: "Normale", haute: "Haute", urgente: "Urgente" };
-const statusLabels: Record<IncidentStatus, string> = { nouveau: "Nouveau", en_cours: "En cours", archive: "Archive" };
+const statusLabels: Record<IncidentStatus, string> = { nouveau: "Nouveau", en_cours: "En cours", cloture: "Cloture", archive: "Archive" };
 const priorityClassName: Record<IncidentPriority, string> = {
   basse: "border-slate-200 bg-slate-50 text-slate-700",
   normale: "border-blue-200 bg-blue-50 text-blue-700",
