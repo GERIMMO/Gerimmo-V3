@@ -76,6 +76,12 @@ export const sidebarItems: NavGroup[] = [
         icon: Building2,
       },
       {
+        id: "utilisateurs",
+        title: "Utilisateurs",
+        url: "/dashboard/utilisateurs",
+        icon: Users,
+      },
+      {
         id: "locataires",
         title: "Locataires",
         url: "/dashboard/locataires",
