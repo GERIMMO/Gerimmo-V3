@@ -1,5 +1,5 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { DocumentsModule } from "./_components/documents-module";
 
 export default function Page() {
-  return <ModulePlaceholder title="Documents" />;
+  return <DocumentsModule />;
 }
