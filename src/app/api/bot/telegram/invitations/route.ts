@@ -1,6 +1,10 @@
+import { requireSuperAdminApi } from "@/lib/auth/api-guards";
 import { generateTelegramInvitation, revokeTelegramInvitation } from "@/services/telegram-bot-service";
 
 export async function POST(request: Request) {
+  const authorization = await requireSuperAdminApi();
+  if (!authorization.authorized) return authorization.response;
+
   try {
     const body = await request.json();
     return Response.json(await generateTelegramInvitation(body), { status: 201 });
@@ -13,6 +17,9 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const authorization = await requireSuperAdminApi();
+  if (!authorization.authorized) return authorization.response;
+
   try {
     const body = (await request.json()) as { invitationId?: string };
     if (!body.invitationId) return Response.json({ message: "Invitation requise." }, { status: 400 });
