@@ -36,59 +36,81 @@ async function getContext() {
 
 export async function getCommunicationPayload(): Promise<CommunicationPayload> {
   const { supabase, user, organizationId } = await getContext();
-  const [notifications, conversations, participants, messages, attachments, preferences, activity, profiles] =
-    await Promise.all([
-      supabase
-        .from("communication_notifications" as never)
-        .select("*")
-        .eq("recipient_profile_id", user.id)
-        .is("archived_at", null)
-        .order("created_at", { ascending: false })
-        .limit(300),
-      supabase
-        .from("communication_conversations" as never)
-        .select("*")
-        .is("archived_at", null)
-        .order("last_message_at", { ascending: false, nullsFirst: false })
-        .limit(150),
-      supabase
-        .from("communication_participants" as never)
-        .select("*,profiles(full_name,email)")
-        .is("archived_at", null)
-        .limit(500),
-      supabase
-        .from("communication_messages" as never)
-        .select("*,profiles:sender_profile_id(full_name)")
-        .is("archived_at", null)
-        .order("created_at", { ascending: true })
-        .limit(1000),
-      supabase
-        .from("communication_attachments" as never)
-        .select("*")
-        .is("archived_at", null)
-        .order("created_at", { ascending: true })
-        .limit(500),
-      supabase
-        .from("communication_preferences" as never)
-        .select("*")
-        .eq("organization_id", organizationId)
-        .eq("profile_id", user.id)
-        .is("archived_at", null)
-        .maybeSingle(),
-      supabase
-        .from("communication_activity_events" as never)
-        .select("*")
-        .eq("profile_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(500),
-      supabase
-        .from("organization_members")
-        .select("profile_id")
-        .eq("organization_id", organizationId)
-        .eq("status", "active")
-        .is("archived_at", null)
-        .limit(500),
-    ]);
+  const [
+    notifications,
+    conversations,
+    participants,
+    messages,
+    attachments,
+    preferences,
+    activity,
+    auditActivity,
+    userActivity,
+    profiles,
+  ] = await Promise.all([
+    supabase
+      .from("communication_notifications" as never)
+      .select("*")
+      .eq("recipient_profile_id", user.id)
+      .is("archived_at", null)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabase
+      .from("communication_conversations" as never)
+      .select("*")
+      .is("archived_at", null)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .limit(150),
+    supabase
+      .from("communication_participants" as never)
+      .select("*,profiles(full_name,email)")
+      .is("archived_at", null)
+      .limit(500),
+    supabase
+      .from("communication_messages" as never)
+      .select("*,profiles:sender_profile_id(full_name)")
+      .is("archived_at", null)
+      .order("created_at", { ascending: true })
+      .limit(1000),
+    supabase
+      .from("communication_attachments" as never)
+      .select("*")
+      .is("archived_at", null)
+      .order("created_at", { ascending: true })
+      .limit(500),
+    supabase
+      .from("communication_preferences" as never)
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("profile_id", user.id)
+      .is("archived_at", null)
+      .maybeSingle(),
+    supabase
+      .from("communication_activity_events" as never)
+      .select("*")
+      .eq("profile_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    supabase
+      .from("audit_logs")
+      .select("id,organization_id,actor_profile_id,action,table_name,record_id,created_at")
+      .eq("actor_profile_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabase
+      .from("user_activity_logs" as never)
+      .select("id,organization_id,profile_id,actor_profile_id,action,created_at")
+      .or(`profile_id.eq.${user.id},actor_profile_id.eq.${user.id}`)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabase
+      .from("organization_members")
+      .select("profile_id")
+      .eq("organization_id", organizationId)
+      .eq("status", "active")
+      .is("archived_at", null)
+      .limit(500),
+  ]);
 
   for (const result of [
     notifications,
@@ -98,6 +120,8 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
     attachments,
     preferences,
     activity,
+    auditActivity,
+    userActivity,
     profiles,
   ]) {
     if (result.error) throw result.error;
@@ -131,9 +155,59 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
           quiet_hours_start: null,
           quiet_hours_end: null,
         },
-    activity: (activity.data ?? []) as CommunicationActivity[],
+    activity: [
+      ...((activity.data ?? []) as CommunicationActivity[]),
+      ...(auditActivity.data ?? []).map((event) => ({
+        id: event.id,
+        organization_id: event.organization_id ?? organizationId,
+        profile_id: user.id,
+        actor_profile_id: event.actor_profile_id,
+        category: auditCategory(event.table_name),
+        action: event.action,
+        title: activityTitle(event.table_name, event.action),
+        description: `Action enregistree dans ${event.table_name}`,
+        entity_type: event.table_name,
+        entity_id: event.record_id,
+        created_at: event.created_at,
+      })),
+      ...(userActivity.data ?? []).map((event) => ({
+        id: String((event as Record<string, unknown>).id),
+        organization_id: String((event as Record<string, unknown>).organization_id),
+        profile_id: String((event as Record<string, unknown>).profile_id),
+        actor_profile_id: stringOrNull((event as Record<string, unknown>).actor_profile_id),
+        category: "utilisateur",
+        action: String((event as Record<string, unknown>).action),
+        title: "Activite utilisateur",
+        description: String((event as Record<string, unknown>).action)
+          .replaceAll("_", " ")
+          .toLowerCase(),
+        entity_type: "profile",
+        entity_id: String((event as Record<string, unknown>).profile_id),
+        created_at: String((event as Record<string, unknown>).created_at),
+      })),
+    ]
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      .slice(0, 600),
     profiles: (profileRows.data ?? []) as CommunicationProfile[],
   };
+}
+
+function auditCategory(tableName: string) {
+  if (tableName.includes("incident")) return "incident";
+  if (tableName.includes("document")) return "document";
+  if (tableName.includes("bien") || tableName.includes("patrimoine") || tableName.includes("residence")) {
+    return "patrimoine";
+  }
+  if (tableName.includes("profile") || tableName.includes("member") || tableName.includes("user")) return "utilisateur";
+  return "systeme";
+}
+
+function activityTitle(tableName: string, action: string) {
+  return `${action.replaceAll("_", " ").toLowerCase()} · ${tableName.replaceAll("_", " ")}`;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" ? value : null;
 }
 
 export async function createCommunicationNotification(input: {
