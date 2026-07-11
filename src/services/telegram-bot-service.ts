@@ -504,13 +504,14 @@ async function storeAttachment(
 
   try {
     const downloaded = await adapter.downloadFile(file.file_id);
-    if (downloaded.bytes.byteLength > maximumAttachmentBytes || !allowedAttachmentMimeTypes.has(downloaded.mimeType)) {
+    const downloadedMimeType = allowedAttachmentMimeTypes.has(downloaded.mimeType) ? downloaded.mimeType : mimeType;
+    if (downloaded.bytes.byteLength > maximumAttachmentBytes || !allowedAttachmentMimeTypes.has(downloadedMimeType)) {
       throw new Error("Fichier Telegram invalide.");
     }
     const extension = downloaded.filePath.split(".").pop() ?? "bin";
     const storagePath = `${conversation.organization_id}/${conversation.profile_id}/${conversation.id}/${created.data.id}.${extension}`;
     const upload = await supabase.storage.from("incident-attachments").upload(storagePath, downloaded.bytes, {
-      contentType: downloaded.mimeType,
+      contentType: downloadedMimeType,
       upsert: false,
     });
     if (upload.error) throw upload.error;
@@ -518,7 +519,7 @@ async function storeAttachment(
       .from("bot_attachments")
       .update({
         storage_path: storagePath,
-        mime_type: downloaded.mimeType,
+        mime_type: downloadedMimeType,
         file_size_bytes: downloaded.bytes.byteLength,
         checksum: hash(Buffer.from(downloaded.bytes).toString("base64")),
         status: "stored",
