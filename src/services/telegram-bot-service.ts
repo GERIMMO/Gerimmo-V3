@@ -404,6 +404,7 @@ async function createIncidentFromConversation(supabase: AdminClient, conversatio
       bien_id: conversation.bien_id,
       created_by: conversation.profile_id,
       category_id: category.data?.id ?? null,
+      category: String(context.categorySlug ?? "autre"),
       description: String(context.description ?? "Incident declare depuis Telegram"),
       priority: "normale",
       status: "nouveau",
@@ -464,6 +465,8 @@ async function storeAttachment(
     .select("id")
     .eq("telegram_file_unique_id", file.file_unique_id)
     .eq("conversation_id", conversation.id)
+    .in("status", ["pending", "stored"])
+    .is("archived_at", null)
     .maybeSingle();
   if (duplicate.data) return { duplicate: true };
   if (declaredSize > maximumAttachmentBytes || !allowedAttachmentMimeTypes.has(mimeType)) {
