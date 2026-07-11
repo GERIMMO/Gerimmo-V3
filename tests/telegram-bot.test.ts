@@ -3,6 +3,7 @@ import {
   classifyMessage,
   parseAvailabilitySlots,
 } from "../src/services/bot/message-understanding.ts";
+import { applyBrandIdentity, gerimmoIdentity, roleRequiresGerimmo } from "../src/services/bot/brand-rules.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -44,4 +45,22 @@ test("limite les documents locataire aux types autorises", () => {
   assert.equal(allowedTenantDocumentTypes.has("contrat"), true);
   assert.equal(allowedTenantDocumentTypes.has("devis"), false);
   assert.equal(allowedTenantDocumentTypes.has("rapport_incident"), false);
+});
+
+test("impose GERIMMO aux artisans", () => {
+  assert.equal(roleRequiresGerimmo("artisan"), true);
+  assert.equal(roleRequiresGerimmo("contractor"), true);
+  assert.equal(roleRequiresGerimmo("locataire"), false);
+});
+
+test("applique la signature et les coordonnees de la marque", () => {
+  const message = applyBrandIdentity("Votre dossier est pris en charge.", {
+    ...gerimmoIdentity,
+    customized: true,
+    displayName: "Martin Immobilier",
+    supportSignature: "L equipe Martin Immobilier",
+    supportPhone: "01 02 03 04 05",
+  });
+  assert.match(message, /Martin Immobilier/);
+  assert.match(message, /01 02 03 04 05/);
 });
