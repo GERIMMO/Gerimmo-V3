@@ -5,6 +5,8 @@ import {
   classifyMessage,
   parseAvailabilitySlots,
 } from "@/services/bot/message-understanding";
+import { applyBrandIdentity } from "@/services/bot/brand-rules";
+import { resolveBotBrandIdentity } from "@/services/bot/branding";
 import { TelegramAdapter } from "@/services/bot/telegram-adapter";
 import type {
   BotAdminPayload,
@@ -129,6 +131,8 @@ async function sendAndLog(
   message: Omit<BotOutgoingMessage, "chatId"> & { chatId?: number },
   chatId: number,
 ) {
+  const identity = await resolveBotBrandIdentity(supabase, conversation.organization_id, conversation.role_key);
+  const brandedMessage = { ...message, text: applyBrandIdentity(message.text, identity) };
   const queued = await supabase
     .from("bot_messages")
     .insert({
@@ -138,7 +142,7 @@ async function sendAndLog(
       incident_id: conversation.incident_id,
       direction: "outgoing",
       message_type: "text",
-      body: message.text,
+      body: brandedMessage.text,
       status: "queued",
     })
     .select("id")
@@ -146,7 +150,7 @@ async function sendAndLog(
   if (queued.error) throw queued.error;
 
   try {
-    const sent = await adapter.sendMessage({ ...message, chatId: message.chatId ?? chatId });
+    const sent = await adapter.sendMessage({ ...brandedMessage, chatId: message.chatId ?? chatId });
     await supabase
       .from("bot_messages")
       .update({ status: "sent", telegram_message_id: sent.externalMessageId })
@@ -611,14 +615,15 @@ async function prepareDocumentEmail(supabase: AdminClient, conversation: BotConv
   }
   const profile = await supabase.from("profiles").select("email").eq("id", conversation.profile_id).single();
   if (profile.error || !profile.data.email) throw new Error("Adresse e-mail indisponible.");
+  const identity = await resolveBotBrandIdentity(supabase, conversation.organization_id, conversation.role_key);
   const outbox = await supabase
     .from("document_email_outbox")
     .insert({
       organization_id: conversation.organization_id,
       document_id: documentId,
       recipient_email: profile.data.email,
-      subject: `Votre document GERIMMO - ${document.data.title}`,
-      body: "Envoi prepare depuis le bot Telegram GERIMMO.",
+      subject: `Votre document ${identity.displayName} - ${document.data.title}`,
+      body: `Envoi prepare depuis l assistance ${identity.displayName}.`,
       status: "pret",
     })
     .select("id")
@@ -1120,6 +1125,7 @@ export async function processTelegramUpdate(update: TelegramUpdate) {
       const account = await confirmLink(supabase, update.callback_query.data.slice(13), user, message.chat.id);
       const role = await findRole(supabase, account);
       const conversation = await getConversation(supabase, account, role);
+      const identity = await resolveBotBrandIdentity(supabase, account.organization_id, role);
       await adapter.answerCallback(update.callback_query.id, "Compte lie");
       await sendAndLog(
         supabase,
@@ -1127,7 +1133,7 @@ export async function processTelegramUpdate(update: TelegramUpdate) {
         conversation,
         {
           ...roleMenu(role),
-          text: "Votre compte Telegram est maintenant lie a GERIMMO.\n\nQue souhaitez-vous faire ?",
+          text: `${identity.welcomeMessage}\n\nVotre compte Telegram est maintenant lie. Que souhaitez-vous faire ?`,
         },
         message.chat.id,
       );
