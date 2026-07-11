@@ -1,6 +1,10 @@
+import { requireSuperAdminApi } from "@/lib/auth/api-guards";
 import { listTelegramAdminData, retryBotError } from "@/services/telegram-bot-service";
 
 export async function GET() {
+  const authorization = await requireSuperAdminApi();
+  if (!authorization.authorized) return authorization.response;
+
   try {
     return Response.json(await listTelegramAdminData());
   } catch (error) {
@@ -12,6 +16,9 @@ export async function GET() {
 }
 
 export async function PATCH(request: Request) {
+  const authorization = await requireSuperAdminApi();
+  if (!authorization.authorized) return authorization.response;
+
   try {
     const body = (await request.json()) as { errorId?: string };
     if (!body.errorId) return Response.json({ message: "Erreur requise." }, { status: 400 });
