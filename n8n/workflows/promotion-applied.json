@@ -1,0 +1,23 @@
+{
+  "name": "GERIMMO - Code promotionnel",
+  "nodes": [
+    {
+      "name": "Événement promotion",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "path": "gerimmo-promotion", "httpMethod": "POST" }
+    },
+    {
+      "name": "Tracer campagne",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [260, 0],
+      "parameters": {
+        "assignments": { "assignments": [{ "name": "event", "value": "promotion.applied", "type": "string" }] }
+      }
+    }
+  ],
+  "connections": { "Événement promotion": { "main": [[{ "node": "Tracer campagne", "type": "main", "index": 0 }]] } },
+  "active": false
+}

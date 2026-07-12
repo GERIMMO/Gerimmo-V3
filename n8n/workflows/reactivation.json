@@ -1,0 +1,25 @@
+{
+  "name": "GERIMMO - Réactivation",
+  "nodes": [
+    {
+      "name": "Événement réactivation",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "path": "gerimmo-reactivation", "httpMethod": "POST" }
+    },
+    {
+      "name": "Confirmer accès",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [260, 0],
+      "parameters": {
+        "assignments": { "assignments": [{ "name": "template", "value": "reactivation", "type": "string" }] }
+      }
+    }
+  ],
+  "connections": {
+    "Événement réactivation": { "main": [[{ "node": "Confirmer accès", "type": "main", "index": 0 }]] }
+  },
+  "active": false
+}

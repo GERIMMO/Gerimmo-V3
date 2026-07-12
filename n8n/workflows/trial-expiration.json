@@ -1,0 +1,32 @@
+{
+  "name": "GERIMMO - Fin d’essai",
+  "nodes": [
+    {
+      "name": "Chaque heure",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": { "rule": { "interval": [{ "field": "hours", "hoursInterval": 1 }] } }
+    },
+    {
+      "name": "Évaluer les essais",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [260, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.GERIMMO_API_URL}}/api/automations/business",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "x-gerimmo-automation-secret", "value": "={{$env.N8N_BUSINESS_WEBHOOK_SECRET}}" }]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "{\"action\":\"evaluate_lifecycle\"}"
+      }
+    }
+  ],
+  "connections": { "Chaque heure": { "main": [[{ "node": "Évaluer les essais", "type": "main", "index": 0 }]] } },
+  "active": false
+}

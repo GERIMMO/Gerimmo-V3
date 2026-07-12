@@ -1,0 +1,23 @@
+{
+  "name": "GERIMMO - Renouvellement",
+  "nodes": [
+    {
+      "name": "Événement renouvellement",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "path": "gerimmo-renewal", "httpMethod": "POST" }
+    },
+    {
+      "name": "Préparer e-mail",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [260, 0],
+      "parameters": { "assignments": { "assignments": [{ "name": "template", "value": "renewal", "type": "string" }] } }
+    }
+  ],
+  "connections": {
+    "Événement renouvellement": { "main": [[{ "node": "Préparer e-mail", "type": "main", "index": 0 }]] }
+  },
+  "active": false
+}

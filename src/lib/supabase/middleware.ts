@@ -58,7 +58,38 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  const isPublicWebhook = pathname === "/api/bot/telegram/webhook";
+  if (
+    isAuthenticated &&
+    pathname.startsWith("/dashboard") &&
+    !pathname.startsWith("/dashboard/abonnement") &&
+    !pathname.startsWith("/dashboard/onboarding")
+  ) {
+    const userId = String(data?.claims?.sub);
+    const membership = await supabase
+      .from("organization_members")
+      .select("organization_id")
+      .eq("profile_id", userId)
+      .eq("status", "active")
+      .is("archived_at", null)
+      .limit(1)
+      .maybeSingle();
+    if (membership.data?.organization_id) {
+      const subscription = await supabase
+        .from("organization_subscriptions" as never)
+        .select("status")
+        .eq("organization_id", membership.data.organization_id)
+        .maybeSingle();
+      const status = (subscription.data as { status?: string } | null)?.status;
+      if (status && ["suspended", "expired", "cancelled"].includes(status)) {
+        return NextResponse.redirect(new URL("/dashboard/abonnement", request.url));
+      }
+    }
+  }
+
+  const isPublicWebhook =
+    pathname === "/api/bot/telegram/webhook" ||
+    pathname === "/api/stripe/webhook" ||
+    pathname === "/api/automations/business";
   if (!isAuthenticated && pathname.startsWith("/api/") && !isPublicWebhook) {
     return NextResponse.json({ message: "Authentification requise." }, { status: 401 });
   }

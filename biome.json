@@ -43,6 +43,7 @@
       "!src/components/calendar",
       "!src/app/(main)/auth/_components/login-form.tsx",
       "!src/app/(main)/auth/_components/register-form.tsx",
+      "!src/app/(main)/auth/_components/signup-business-form.tsx",
       "!src/app/(main)/auth/forgot-password/page.tsx"
     ]
   },

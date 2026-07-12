@@ -52,3 +52,27 @@ export async function logoutAction() {
   await supabase.auth.signOut();
   redirect("/auth/v2/login");
 }
+
+export async function signupBusinessAction(_state: AuthActionState, formData: FormData): Promise<AuthActionState> {
+  const parsed = credentialsSchema
+    .extend({ fullName: z.string().min(2, "Nom requis."), accountType: z.enum(["agency", "independent_owner"]) })
+    .safeParse({
+      email: formData.get("email"),
+      password: formData.get("password"),
+      fullName: formData.get("full_name"),
+      accountType: formData.get("account_type"),
+    });
+  if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Informations invalides." };
+  const origin = (await headers()).get("origin") ?? "";
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signUp({
+    email: parsed.data.email,
+    password: parsed.data.password,
+    options: {
+      data: { full_name: parsed.data.fullName, account_type: parsed.data.accountType },
+      emailRedirectTo: `${origin}/auth/callback?next=/dashboard/onboarding`,
+    },
+  });
+  if (error) return { message: "La création du compte a échoué." };
+  return { success: true, message: "Compte créé. Consultez votre e-mail pour confirmer votre accès." };
+}

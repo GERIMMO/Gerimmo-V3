@@ -1,0 +1,25 @@
+{
+  "name": "GERIMMO - Suspension",
+  "nodes": [
+    {
+      "name": "Événement suspension",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "path": "gerimmo-suspension", "httpMethod": "POST" }
+    },
+    {
+      "name": "Informer sans supprimer",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [260, 0],
+      "parameters": {
+        "assignments": { "assignments": [{ "name": "template", "value": "suspension", "type": "string" }] }
+      }
+    }
+  ],
+  "connections": {
+    "Événement suspension": { "main": [[{ "node": "Informer sans supprimer", "type": "main", "index": 0 }]] }
+  },
+  "active": false
+}

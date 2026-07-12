@@ -1,0 +1,25 @@
+{
+  "name": "GERIMMO - Paiement accepté",
+  "nodes": [
+    {
+      "name": "Événement paiement",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "path": "gerimmo-payment-succeeded", "httpMethod": "POST" }
+    },
+    {
+      "name": "Préparer confirmation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [260, 0],
+      "parameters": {
+        "assignments": { "assignments": [{ "name": "template", "value": "payment_succeeded", "type": "string" }] }
+      }
+    }
+  ],
+  "connections": {
+    "Événement paiement": { "main": [[{ "node": "Préparer confirmation", "type": "main", "index": 0 }]] }
+  },
+  "active": false
+}

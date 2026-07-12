@@ -1,0 +1,23 @@
+{
+  "name": "GERIMMO - Paiement refusé",
+  "nodes": [
+    {
+      "name": "Événement paiement",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "path": "gerimmo-payment-failed", "httpMethod": "POST" }
+    },
+    {
+      "name": "Préparer relance",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [260, 0],
+      "parameters": {
+        "assignments": { "assignments": [{ "name": "template", "value": "payment_failed", "type": "string" }] }
+      }
+    }
+  ],
+  "connections": { "Événement paiement": { "main": [[{ "node": "Préparer relance", "type": "main", "index": 0 }]] } },
+  "active": false
+}
