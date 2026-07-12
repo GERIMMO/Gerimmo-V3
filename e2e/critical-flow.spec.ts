@@ -23,7 +23,7 @@ test("les surfaces critiques existent et restent protégées", async ({ page, re
 
 test("le parcours public présente la valeur et mène à l'essai", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "GERIMMO" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "GERIMMO", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Essai gratuit de 14 jours/ })).toBeVisible();
   for (const route of ["/tarifs", "/demonstration", "/aide", "/pourquoi-gerimmo", "/contact"]) {
     await page.goto(route);
