@@ -39,6 +39,8 @@
       "!.next",
       "!dist",
       "!out",
+      "!playwright-report",
+      "!test-results",
       "!src/components/ui",
       "!src/components/calendar",
       "!src/app/(main)/auth/_components/login-form.tsx",

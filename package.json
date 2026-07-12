@@ -9,6 +9,7 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test": "node --no-warnings --test tests/*.test.ts",
+    "test:e2e": "playwright test",
     "test:telegram": "node --no-warnings --test tests/telegram-bot.test.ts",
     "test:communication": "node --no-warnings --test tests/communication.test.ts",
     "test:architecture": "node --no-warnings --test tests/architecture.test.ts",
@@ -67,6 +68,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/d3-geo": "^3.1.0",
     "@types/node": "^22.20.1",
