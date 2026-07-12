@@ -2,7 +2,7 @@
   "name": "gerimmo-v3",
   "version": "2.2.0",
   "private": true,
-  "packageManager": "pnpm@11.7.0",
+  "packageManager": "pnpm@10.12.4",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
