@@ -63,10 +63,7 @@ export type IncidentsPayload = {
   events: IncidentEvent[];
 };
 
-export type CreateIncidentInput = Pick<
-  GerimmoIncident,
-  "organization_id" | "bien_id" | "category" | "description"
-> &
+export type CreateIncidentInput = Pick<GerimmoIncident, "organization_id" | "bien_id" | "category" | "description"> &
   Partial<
     Pick<
       GerimmoIncident,

@@ -1,7 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
-
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { InviteUserInput, UpdateUserInput, UsersPayload } from "@/types/utilisateurs";
+
+import { createHash, randomBytes } from "node:crypto";
 
 type MemberRecord = {
   id: string;
@@ -26,11 +27,24 @@ export async function listUsers(): Promise<UsersPayload> {
   const [members, invitations, activities, statusHistory] = await Promise.all([
     supabase
       .from("organization_members")
-      .select("id,organization_id,profile_id,member_type,status,created_at,archived_at,profiles(id,email,full_name,phone),organizations(id,name),member_role_assignments(roles(key,name)),user_profile_details(job_title,city,last_seen_at)")
+      .select(
+        "id,organization_id,profile_id,member_type,status,created_at,archived_at,profiles(id,email,full_name,phone),organizations(id,name),member_role_assignments(roles(key,name)),user_profile_details(job_title,city,last_seen_at)",
+      )
       .order("created_at", { ascending: false }),
-    supabase.from("user_invitations").select("id,organization_id,email,full_name,member_type,role_key,status,expires_at,created_at").order("created_at", { ascending: false }),
-    supabase.from("user_activity_logs").select("id,organization_id,profile_id,action,created_at").order("created_at", { ascending: false }).limit(200),
-    supabase.from("user_status_history").select("id,organization_id,profile_id,previous_status,next_status,created_at").order("created_at", { ascending: false }).limit(200),
+    supabase
+      .from("user_invitations")
+      .select("id,organization_id,email,full_name,member_type,role_key,status,expires_at,created_at")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("user_activity_logs")
+      .select("id,organization_id,profile_id,action,created_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("user_status_history")
+      .select("id,organization_id,profile_id,previous_status,next_status,created_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
   ]);
 
   for (const result of [members, invitations, activities, statusHistory]) {
@@ -75,31 +89,64 @@ export async function inviteUser(input: InviteUserInput) {
   const token = randomBytes(32).toString("base64url");
   const { data, error } = await supabase
     .from("user_invitations")
-    .insert({ ...input, token_hash: hashToken(token), expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString() } as never)
+    .insert({
+      ...input,
+      token_hash: hashToken(token),
+      expires_at: new Date(Date.now() + 1000 * 60 * 60 * 24 * 7).toISOString(),
+    } as never)
     .select("id,organization_id,email,full_name,member_type,role_key,status,expires_at,created_at")
     .single();
 
   if (error) throw error;
-  return { invitation: data, secureLink: `/activation/${token}` };
+  const origin =
+    process.env.NEXT_PUBLIC_APP_URL ??
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined);
+  const admin = createAdminClient();
+  const authInvitation = await admin.auth.admin.inviteUserByEmail(input.email, {
+    data: { full_name: input.full_name, organization_id: input.organization_id, role_key: input.role_key },
+    redirectTo: origin ? `${origin}/auth/callback?next=/auth/update-password` : undefined,
+  });
+  if (authInvitation.error) {
+    await supabase
+      .from("user_invitations")
+      .update({ status: "revoked", archived_at: new Date().toISOString() } as never)
+      .eq("id", (data as { id: string }).id);
+    throw authInvitation.error;
+  }
+  return { invitation: data };
 }
 
 export async function updateUser(input: UpdateUserInput) {
   const supabase = await createClient();
 
   if (input.full_name !== undefined || input.phone !== undefined) {
-    const { error } = await supabase.from("profiles").update({ full_name: input.full_name, phone: input.phone } as never).eq("id", input.profile_id);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ full_name: input.full_name, phone: input.phone } as never)
+      .eq("id", input.profile_id);
     if (error) throw error;
   }
 
   if (input.job_title !== undefined || input.city !== undefined) {
-    const { error } = await supabase.from("user_profile_details").upsert({ profile_id: input.profile_id, organization_id: input.organization_id, job_title: input.job_title, city: input.city } as never, { onConflict: "profile_id,organization_id" });
+    const { error } = await supabase.from("user_profile_details").upsert(
+      {
+        profile_id: input.profile_id,
+        organization_id: input.organization_id,
+        job_title: input.job_title,
+        city: input.city,
+      } as never,
+      { onConflict: "profile_id,organization_id" },
+    );
     if (error) throw error;
   }
 
   if (input.status) {
     const { error } = await supabase
       .from("organization_members")
-      .update({ status: input.status === "inactive" ? "suspended" : input.status, archived_at: input.status === "archived" ? new Date().toISOString() : null } as never)
+      .update({
+        status: input.status === "inactive" ? "suspended" : input.status,
+        archived_at: input.status === "archived" ? new Date().toISOString() : null,
+      } as never)
       .eq("profile_id", input.profile_id)
       .eq("organization_id", input.organization_id);
     if (error) throw error;

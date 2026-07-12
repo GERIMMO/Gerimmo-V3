@@ -40,7 +40,10 @@
       "!dist",
       "!out",
       "!src/components/ui",
-      "!src/components/calendar"
+      "!src/components/calendar",
+      "!src/app/(main)/auth/_components/login-form.tsx",
+      "!src/app/(main)/auth/_components/register-form.tsx",
+      "!src/app/(main)/auth/forgot-password/page.tsx"
     ]
   },
   "formatter": {

@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { createClient } from "@/lib/supabase/server";
 import { defaultCommunicationCategories, isCommunicationAttachmentAllowed } from "@/services/communication-rules";
 import type {
@@ -15,6 +13,8 @@ import type {
   CreateConversationInput,
   NotificationType,
 } from "@/types/communication";
+
+import { randomUUID } from "node:crypto";
 
 async function getContext() {
   const supabase = await createClient();

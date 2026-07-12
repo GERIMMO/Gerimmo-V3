@@ -120,7 +120,10 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
       .eq("id", batch.id)
       .select("*")
       .single(),
-    supabase.from("incident_schedule_requests").update({ status: "creneaux_proposes" } as never).eq("id", scheduleRequest.id),
+    supabase
+      .from("incident_schedule_requests")
+      .update({ status: "creneaux_proposes" } as never)
+      .eq("id", scheduleRequest.id),
   ]);
 
   if (batchUpdate.error) {
@@ -136,7 +139,11 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
 
 export async function decideSchedule(input: ScheduleDecisionInput) {
   const supabase = await createClient();
-  const scheduleResult = await supabase.from("incident_schedule_requests").select("*").eq("id", input.schedule_request_id).single();
+  const scheduleResult = await supabase
+    .from("incident_schedule_requests")
+    .select("*")
+    .eq("id", input.schedule_request_id)
+    .single();
 
   if (scheduleResult.error) {
     throw scheduleResult.error;
@@ -162,18 +169,16 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
     throw new Error("Un creneau doit etre selectionne.");
   }
 
-  const responseInsert = await supabase
-    .from("incident_schedule_responses")
-    .insert({
-      organization_id: schedule.organization_id,
-      schedule_request_id: schedule.id,
-      batch_id: latestBatch?.id ?? null,
-      slot_id: input.slot_id ?? null,
-      actor_profile_id: input.actor_profile_id ?? null,
-      actor_role: input.actor_role,
-      action: input.action,
-      comment: input.comment ?? null,
-    } as never);
+  const responseInsert = await supabase.from("incident_schedule_responses").insert({
+    organization_id: schedule.organization_id,
+    schedule_request_id: schedule.id,
+    batch_id: latestBatch?.id ?? null,
+    slot_id: input.slot_id ?? null,
+    actor_profile_id: input.actor_profile_id ?? null,
+    actor_role: input.actor_role,
+    action: input.action,
+    comment: input.comment ?? null,
+  } as never);
 
   if (responseInsert.error) {
     throw responseInsert.error;
@@ -181,9 +186,17 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
 
   if (input.action === "transmission_locataire") {
     const [requestUpdate, batchUpdate] = await Promise.all([
-      supabase.from("incident_schedule_requests").update({ status: "transmis_locataire" } as never).eq("id", schedule.id).select("*").single(),
+      supabase
+        .from("incident_schedule_requests")
+        .update({ status: "transmis_locataire" } as never)
+        .eq("id", schedule.id)
+        .select("*")
+        .single(),
       latestBatch
-        ? supabase.from("incident_schedule_slot_batches").update({ status: "transmise" } as never).eq("id", latestBatch.id)
+        ? supabase
+            .from("incident_schedule_slot_batches")
+            .update({ status: "transmise" } as never)
+            .eq("id", latestBatch.id)
         : Promise.resolve({ error: null }),
     ]);
 
@@ -202,12 +215,27 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
     const [requestUpdate, batchUpdate, slotsUpdate] = await Promise.all([
       supabase
         .from("incident_schedule_requests")
-        .update({ status: "relance_artisan", current_round: schedule.current_round + 1, selected_slot_id: null, validated_at: null } as never)
+        .update({
+          status: "relance_artisan",
+          current_round: schedule.current_round + 1,
+          selected_slot_id: null,
+          validated_at: null,
+        } as never)
         .eq("id", schedule.id)
         .select("*")
         .single(),
-      latestBatch ? supabase.from("incident_schedule_slot_batches").update({ status: "refusee" } as never).eq("id", latestBatch.id) : Promise.resolve({ error: null }),
-      latestBatch ? supabase.from("incident_schedule_slots").update({ status: "refuse" } as never).eq("batch_id", latestBatch.id) : Promise.resolve({ error: null }),
+      latestBatch
+        ? supabase
+            .from("incident_schedule_slot_batches")
+            .update({ status: "refusee" } as never)
+            .eq("id", latestBatch.id)
+        : Promise.resolve({ error: null }),
+      latestBatch
+        ? supabase
+            .from("incident_schedule_slots")
+            .update({ status: "refuse" } as never)
+            .eq("batch_id", latestBatch.id)
+        : Promise.resolve({ error: null }),
     ]);
 
     for (const result of [batchUpdate, slotsUpdate]) {
@@ -251,9 +279,21 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
       .eq("id", schedule.id)
       .select("*")
       .single(),
-    supabase.from("incident_schedule_slots").update({ status: "selectionne" } as never).eq("id", selectedSlotId),
-    supabase.from("incident_schedule_slots").update({ status: "refuse" } as never).eq("schedule_request_id", schedule.id).neq("id", selectedSlotId),
-    latestBatch ? supabase.from("incident_schedule_slot_batches").update({ status: "acceptee" } as never).eq("id", latestBatch.id) : Promise.resolve({ error: null }),
+    supabase
+      .from("incident_schedule_slots")
+      .update({ status: "selectionne" } as never)
+      .eq("id", selectedSlotId),
+    supabase
+      .from("incident_schedule_slots")
+      .update({ status: "refuse" } as never)
+      .eq("schedule_request_id", schedule.id)
+      .neq("id", selectedSlotId),
+    latestBatch
+      ? supabase
+          .from("incident_schedule_slot_batches")
+          .update({ status: "acceptee" } as never)
+          .eq("id", latestBatch.id)
+      : Promise.resolve({ error: null }),
   ]);
 
   for (const result of [selectedSlotUpdate, otherSlotsUpdate, batchUpdate]) {

@@ -21,9 +21,12 @@ export async function PATCH(request: Request, context: RouteContext) {
         quote_id: body.quote_id,
         decision: body.decision,
         comment: body.comment,
-      })
+      }),
     );
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Validation impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Validation impossible." },
+      { status: 500 },
+    );
   }
 }

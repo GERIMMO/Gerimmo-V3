@@ -12,7 +12,10 @@ export async function GET() {
   try {
     return NextResponse.json(await listIncidentFinalization());
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Lecture impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Lecture impossible." },
+      { status: 500 },
+    );
   }
 }
 
@@ -32,6 +35,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json(await createIntervention(body), { status: 201 });
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Creation impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Creation impossible." },
+      { status: 500 },
+    );
   }
 }

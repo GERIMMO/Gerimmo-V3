@@ -134,6 +134,7 @@ export type DocumentsPayload = {
 };
 
 export type CreateDocumentInput = Pick<GerimmoDocument, "organization_id" | "title" | "reference"> &
+  Partial<Pick<GerimmoDocument, "id">> &
   Partial<
     Pick<
       GerimmoDocument,

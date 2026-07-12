@@ -1,4 +1,10 @@
-export type ScheduleStatus = "demande_disponibilites" | "creneaux_proposes" | "transmis_locataire" | "valide" | "relance_artisan" | "annule";
+export type ScheduleStatus =
+  | "demande_disponibilites"
+  | "creneaux_proposes"
+  | "transmis_locataire"
+  | "valide"
+  | "relance_artisan"
+  | "annule";
 export type ScheduleBatchStatus = "brouillon" | "proposee" | "transmise" | "acceptee" | "refusee" | "remplacee";
 export type ScheduleSlotStatus = "propose" | "selectionne" | "refuse" | "expire";
 export type ScheduleActorRole = "responsable" | "locataire" | "artisan" | "systeme";
@@ -111,7 +117,12 @@ export type CreateScheduleRequestInput = Pick<
   Partial<
     Pick<
       IncidentScheduleRequest,
-      "comparison_id" | "artisan_profile_id" | "responsible_profile_id" | "tenant_profile_id" | "requested_by" | "metadata"
+      | "comparison_id"
+      | "artisan_profile_id"
+      | "responsible_profile_id"
+      | "tenant_profile_id"
+      | "requested_by"
+      | "metadata"
     >
   >;
 

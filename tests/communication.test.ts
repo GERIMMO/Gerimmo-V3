@@ -1,11 +1,10 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-
 import {
   defaultCommunicationCategories,
   isCommunicationAttachmentAllowed,
   matchesCommunicationSearch,
 } from "../src/services/communication-rules.ts";
+import assert from "node:assert/strict";
+import test from "node:test";
 
 test("active toutes les categories par defaut", () => {
   assert.equal(Object.values(defaultCommunicationCategories).every(Boolean), true);

@@ -143,6 +143,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      accept_user_invitation: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
       audit_table_changes: {
         Args: Record<string, never>;
         Returns: unknown;

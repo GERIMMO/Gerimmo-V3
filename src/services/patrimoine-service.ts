@@ -19,9 +19,20 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
     supabase.from("patrimoines").select("*").is("archived_at", null).order("name"),
     supabase.from("residences").select("*").is("archived_at", null).order("name"),
     supabase.from("biens").select("*").order("updated_at", { ascending: false }),
-    supabase.from("bien_occupants").select("id,bien_id,full_name,occupant_type,started_at,ended_at").is("archived_at", null),
-    supabase.from("bien_echeances").select("id,bien_id,title,due_date,status,amount_cents").is("archived_at", null).order("due_date"),
-    supabase.from("bien_history").select("id,bien_id,action,created_at").order("created_at", { ascending: false }).limit(200),
+    supabase
+      .from("bien_occupants")
+      .select("id,bien_id,full_name,occupant_type,started_at,ended_at")
+      .is("archived_at", null),
+    supabase
+      .from("bien_echeances")
+      .select("id,bien_id,title,due_date,status,amount_cents")
+      .is("archived_at", null)
+      .order("due_date"),
+    supabase
+      .from("bien_history")
+      .select("id,bien_id,action,created_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
   ]);
 
   for (const result of [patrimoines, residences, biens, occupants, echeances, historique]) {
@@ -42,7 +53,11 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
 
 export async function createPatrimoine(input: CreatePatrimoineInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("patrimoines").insert(input as never).select("*").single();
+  const { data, error } = await supabase
+    .from("patrimoines")
+    .insert(input as never)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -53,7 +68,11 @@ export async function createPatrimoine(input: CreatePatrimoineInput) {
 
 export async function createResidence(input: CreateResidenceInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("residences").insert(input as never).select("*").single();
+  const { data, error } = await supabase
+    .from("residences")
+    .insert(input as never)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -64,7 +83,11 @@ export async function createResidence(input: CreateResidenceInput) {
 
 export async function createBien(input: CreateBienInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("biens").insert(input as never).select("*").single();
+  const { data, error } = await supabase
+    .from("biens")
+    .insert(input as never)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -75,7 +98,12 @@ export async function createBien(input: CreateBienInput) {
 
 export async function updateBien({ id, ...input }: UpdateBienInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("biens").update(input as never).eq("id", id).select("*").single();
+  const { data, error } = await supabase
+    .from("biens")
+    .update(input as never)
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;

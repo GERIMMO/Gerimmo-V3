@@ -66,7 +66,7 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput) {
         quote_request_id: request.id,
         status: "demande",
         ...recipient,
-      })) as never
+      })) as never,
     );
 
     if (recipientError) {
@@ -79,7 +79,12 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput) {
 
 export async function updateQuoteRequest({ id, ...input }: UpdateQuoteRequestInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("incident_quote_requests").update(input as never).eq("id", id).select("*").single();
+  const { data, error } = await supabase
+    .from("incident_quote_requests")
+    .update(input as never)
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -117,20 +122,43 @@ export async function receiveQuote(input: ReceiveQuoteInput) {
 
 export async function selectQuote(id: string) {
   const supabase = await createClient();
-  const current = await supabase.from("incident_quotes").select("id,organization_id,quote_request_id,recipient_id").eq("id", id).single();
+  const current = await supabase
+    .from("incident_quotes")
+    .select("id,organization_id,quote_request_id,recipient_id")
+    .eq("id", id)
+    .single();
 
   if (current.error) {
     throw current.error;
   }
 
   const quote = current.data as Pick<IncidentQuote, "id" | "organization_id" | "quote_request_id" | "recipient_id">;
-  await supabase.from("incident_quotes").update({ status: "recu" } as never).eq("quote_request_id", quote.quote_request_id).neq("id", id);
-  await supabase.from("incident_quote_recipients").update({ status: "recu" } as never).eq("quote_request_id", quote.quote_request_id).neq("id", quote.recipient_id);
+  await supabase
+    .from("incident_quotes")
+    .update({ status: "recu" } as never)
+    .eq("quote_request_id", quote.quote_request_id)
+    .neq("id", id);
+  await supabase
+    .from("incident_quote_recipients")
+    .update({ status: "recu" } as never)
+    .eq("quote_request_id", quote.quote_request_id)
+    .neq("id", quote.recipient_id);
 
   const [{ data, error }, requestUpdate, recipientUpdate] = await Promise.all([
-    supabase.from("incident_quotes").update({ status: "retenu" } as never).eq("id", id).select("*").single(),
-    supabase.from("incident_quote_requests").update({ status: "retenu" } as never).eq("id", quote.quote_request_id),
-    supabase.from("incident_quote_recipients").update({ status: "retenu" } as never).eq("id", quote.recipient_id),
+    supabase
+      .from("incident_quotes")
+      .update({ status: "retenu" } as never)
+      .eq("id", id)
+      .select("*")
+      .single(),
+    supabase
+      .from("incident_quote_requests")
+      .update({ status: "retenu" } as never)
+      .eq("id", quote.quote_request_id),
+    supabase
+      .from("incident_quote_recipients")
+      .update({ status: "retenu" } as never)
+      .eq("id", quote.recipient_id),
   ]);
 
   for (const result of [requestUpdate, recipientUpdate]) {

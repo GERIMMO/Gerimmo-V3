@@ -82,7 +82,12 @@ export type IncidentQuotesPayload = {
 };
 
 export type CreateQuoteRequestInput = Pick<IncidentQuoteRequest, "organization_id" | "incident_id" | "title"> &
-  Partial<Pick<IncidentQuoteRequest, "requested_by" | "description" | "allow_single_private_artisan" | "expires_at" | "metadata">> & {
+  Partial<
+    Pick<
+      IncidentQuoteRequest,
+      "requested_by" | "description" | "allow_single_private_artisan" | "expires_at" | "metadata"
+    >
+  > & {
     recipients?: Array<
       Pick<IncidentQuoteRecipient, "artisan_name" | "artisan_scope"> &
         Partial<Pick<IncidentQuoteRecipient, "artisan_profile_id" | "artisan_email" | "metadata">>
@@ -96,5 +101,8 @@ export type UpdateQuoteRequestInput = Partial<CreateQuoteRequestInput> & {
   archived_at?: string | null;
 };
 
-export type ReceiveQuoteInput = Pick<IncidentQuote, "organization_id" | "quote_request_id" | "recipient_id" | "amount_cents"> &
+export type ReceiveQuoteInput = Pick<
+  IncidentQuote,
+  "organization_id" | "quote_request_id" | "recipient_id" | "amount_cents"
+> &
   Partial<Pick<IncidentQuote, "currency" | "valid_until" | "file_name" | "storage_path" | "notes" | "metadata">>;

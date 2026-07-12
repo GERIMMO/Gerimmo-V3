@@ -8,6 +8,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ us
     const body = await request.json();
     return NextResponse.json(await updateUser({ profile_id: userId, ...body }));
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Modification impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Modification impossible." },
+      { status: 500 },
+    );
   }
 }

@@ -1,9 +1,9 @@
+import { applyBrandIdentity, gerimmoIdentity, roleRequiresGerimmo } from "../src/services/bot/brand-rules.ts";
 import {
   allowedTenantDocumentTypes,
   classifyMessage,
   parseAvailabilitySlots,
 } from "../src/services/bot/message-understanding.ts";
-import { applyBrandIdentity, gerimmoIdentity, roleRequiresGerimmo } from "../src/services/bot/brand-rules.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 

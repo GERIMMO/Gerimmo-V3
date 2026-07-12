@@ -19,7 +19,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           proposed_by: body.proposed_by,
           artisan_comment: body.artisan_comment,
           slots: body.slots ?? [],
-        })
+        }),
       );
     }
 
@@ -31,9 +31,12 @@ export async function PATCH(request: Request, context: RouteContext) {
         actor_role: body.actor_role,
         action: body.action,
         comment: body.comment,
-      })
+      }),
     );
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Action impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Action impossible." },
+      { status: 500 },
+    );
   }
 }

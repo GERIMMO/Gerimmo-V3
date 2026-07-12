@@ -48,7 +48,20 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
+  const isAuthenticated = Boolean(data?.claims?.sub);
+  const pathname = request.nextUrl.pathname;
+
+  if (!isAuthenticated && pathname.startsWith("/dashboard")) {
+    const loginUrl = new URL("/auth/v2/login", request.url);
+    loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(loginUrl);
+  }
+
+  const isPublicWebhook = pathname === "/api/bot/telegram/webhook";
+  if (!isAuthenticated && pathname.startsWith("/api/") && !isPublicWebhook) {
+    return NextResponse.json({ message: "Authentification requise." }, { status: 401 });
+  }
 
   return response;
 }

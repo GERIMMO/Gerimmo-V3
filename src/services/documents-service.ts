@@ -5,9 +5,9 @@ import type {
   DocumentCategory,
   DocumentEmail,
   DocumentEvent,
+  DocumentsPayload,
   DocumentTemplate,
   DocumentVersion,
-  DocumentsPayload,
   GerimmoDocument,
   SendDocumentInput,
   UpdateDocumentInput,
@@ -21,9 +21,17 @@ export async function listDocuments(): Promise<DocumentsPayload> {
     supabase.from("document_templates").select("*").is("archived_at", null).order("name"),
     supabase.from("documents").select("*").order("updated_at", { ascending: false }),
     supabase.from("document_versions").select("*").order("version_number", { ascending: false }).limit(500),
-    supabase.from("document_events").select("id,organization_id,document_id,document_version_id,action,metadata,created_at").order("created_at", { ascending: false }).limit(300),
+    supabase
+      .from("document_events")
+      .select("id,organization_id,document_id,document_version_id,action,metadata,created_at")
+      .order("created_at", { ascending: false })
+      .limit(300),
     supabase.from("document_alerts").select("*").order("due_at", { ascending: true }).limit(200),
-    supabase.from("document_email_outbox").select("id,organization_id,document_id,recipient_email,subject,body,status,sent_at,created_at").order("created_at", { ascending: false }).limit(200),
+    supabase
+      .from("document_email_outbox")
+      .select("id,organization_id,document_id,recipient_email,subject,body,status,sent_at,created_at")
+      .order("created_at", { ascending: false })
+      .limit(200),
   ]);
 
   for (const result of [categories, templates, documents, versions, events, alerts, emails]) {
@@ -65,7 +73,12 @@ export async function createDocument(input: CreateDocumentInput) {
 
 export async function updateDocument({ id, ...input }: UpdateDocumentInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("documents").update(input as never).eq("id", id).select("*").single();
+  const { data, error } = await supabase
+    .from("documents")
+    .update(input as never)
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;

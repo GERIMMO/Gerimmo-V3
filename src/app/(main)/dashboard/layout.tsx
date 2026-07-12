@@ -10,7 +10,8 @@ import { SimpleIcon } from "@/components/simple-icon";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { users } from "@/data/users";
+import { requireUser } from "@/lib/auth/guards";
+import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { getPreference } from "@/server/server-actions";
 
@@ -20,6 +21,20 @@ import { SearchDialog } from "./_components/sidebar/search-dialog";
 import { ThemeSwitcher } from "./_components/sidebar/theme-switcher";
 
 export default async function Layout({ children }: Readonly<{ children: ReactNode }>) {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name,is_super_admin")
+    .eq("id", user.id)
+    .maybeSingle();
+  const currentUser = {
+    id: user.id,
+    name: profile?.full_name || user.email || "Utilisateur GERIMMO",
+    email: user.email || "",
+    avatar: "",
+    role: profile?.is_super_admin ? "Super Admin" : "Membre GERIMMO",
+  };
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
   const [variant, collapsible] = await Promise.all([
@@ -36,7 +51,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant={variant} collapsible={collapsible} />
+      <AppSidebar user={currentUser} variant={variant} collapsible={collapsible} />
       <SidebarInset
         className={cn(
           "[html[data-content-layout=centered]_&>*]:mx-auto",
@@ -71,12 +86,12 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
                   href="https://github.com/GERIMMO/Gerimmo-V3"
                   target="_blank"
                   rel="noreferrer"
-                  aria-label="Open GERIMMO V3 repository"
+                  aria-label="Ouvrir le dépôt GERIMMO V3"
                 >
                   <SimpleIcon icon={siGithub} className="fill-primary-foreground" />
                 </Link>
               </Button>
-              <AccountSwitcher users={users} />
+              <AccountSwitcher user={currentUser} />
             </div>
           </div>
         </header>

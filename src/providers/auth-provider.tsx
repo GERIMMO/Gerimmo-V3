@@ -84,7 +84,7 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
       isLoading,
       error,
     }),
-    [error, isLoading, supabase, user]
+    [error, isLoading, supabase, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

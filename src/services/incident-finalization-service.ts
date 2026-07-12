@@ -27,7 +27,11 @@ export async function listIncidentFinalization(): Promise<IncidentFinalizationPa
       supabase.from("incident_intervention_materials").select("*").order("created_at", { ascending: true }),
       supabase.from("incident_intervention_events").select("*").order("created_at", { ascending: false }).limit(600),
       supabase.from("incident_intervention_reports").select("*").order("updated_at", { ascending: false }),
-      supabase.from("incident_intervention_report_events").select("*").order("created_at", { ascending: false }).limit(500),
+      supabase
+        .from("incident_intervention_report_events")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500),
       supabase.from("incident_closure_reviews").select("*").order("created_at", { ascending: false }),
       supabase.from("incident_artisan_evaluations").select("*").order("created_at", { ascending: false }),
       supabase.from("incident_artisan_rating_statistics").select("*"),
@@ -85,7 +89,12 @@ export async function createIntervention(input: CreateInterventionInput) {
 
 export async function updateIntervention({ id, ...input }: UpdateInterventionInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("incident_interventions").update(input as never).eq("id", id).select("*").single();
+  const { data, error } = await supabase
+    .from("incident_interventions")
+    .update(input as never)
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -124,7 +133,11 @@ export async function completeIntervention(input: UpdateInterventionInput) {
 
 export async function addInterventionMaterial(input: Omit<InterventionMaterial, "id" | "created_at" | "archived_at">) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("incident_intervention_materials").insert(input as never).select("*").single();
+  const { data, error } = await supabase
+    .from("incident_intervention_materials")
+    .insert(input as never)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -135,7 +148,11 @@ export async function addInterventionMaterial(input: Omit<InterventionMaterial, 
 
 export async function createInterventionReport(input: CreateReportInput) {
   const supabase = await createClient();
-  const interventionResult = await supabase.from("incident_interventions").select("*").eq("id", input.intervention_id).single();
+  const interventionResult = await supabase
+    .from("incident_interventions")
+    .select("*")
+    .eq("id", input.intervention_id)
+    .single();
 
   if (interventionResult.error) {
     throw interventionResult.error;
@@ -247,7 +264,12 @@ export async function updateInterventionReport({ id, action, ...input }: UpdateR
     patch.archived_at = new Date().toISOString();
   }
 
-  const { data, error } = await supabase.from("incident_intervention_reports").update(patch as never).eq("id", id).select("*").single();
+  const { data, error } = await supabase
+    .from("incident_intervention_reports")
+    .update(patch as never)
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;
@@ -284,7 +306,11 @@ export async function createIncidentClosure(input: CreateClosureInput) {
 
 export async function createArtisanEvaluation(input: CreateEvaluationInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("incident_artisan_evaluations").insert(input as never).select("*").single();
+  const { data, error } = await supabase
+    .from("incident_artisan_evaluations")
+    .insert(input as never)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;

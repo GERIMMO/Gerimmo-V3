@@ -25,7 +25,9 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json(await updateInterventionReport({ id: resourceId, ...body }));
     }
     if (body.type === "materiau") {
-      return NextResponse.json(await addInterventionMaterial({ intervention_id: resourceId, ...body }), { status: 201 });
+      return NextResponse.json(await addInterventionMaterial({ intervention_id: resourceId, ...body }), {
+        status: 201,
+      });
     }
     if (body.action === "demarrer") {
       return NextResponse.json(await startIntervention(resourceId));
@@ -48,6 +50,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json(await updateIntervention({ id: resourceId, ...body }));
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Action impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Action impossible." },
+      { status: 500 },
+    );
   }
 }

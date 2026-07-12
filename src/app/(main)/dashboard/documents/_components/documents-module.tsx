@@ -1,180 +1,209 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { Archive, Download, FileText, History, Mail, Printer, RotateCcw, Search, Send, Upload } from "lucide-react";
+
+import { Archive, Download, FileText, RotateCcw, Search, Upload } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import type { DocumentsPayload, GerimmoDocument } from "@/types/documents";
 
-type Doc = {
-  id: string;
-  title: string;
-  reference: string;
-  category: string;
-  status: "brouillon" | "actif" | "envoye" | "archive";
-  visibility: string;
-  version: number;
-  expiresAt: string | null;
-  fileName: string;
-  size: number;
-  history: string[];
-};
+const statusLabels = { brouillon: "Brouillon", actif: "Actif", envoye: "Envoyé", expire: "Expiré", archive: "Archivé" };
 
-const templates = ["Rapport d incident", "Quittance", "Bon d intervention", "Courrier", "Devis", "Compte rendu"];
-const categories = ["Rapports", "Quittances", "Interventions", "Courriers", "Devis"];
-
-const initialDocs: Doc[] = [
-  {
-    id: "doc-1",
-    title: "Rapport d incident - Degat des eaux",
-    reference: "DOC-2026-0001",
-    category: "Rapports",
-    status: "actif",
-    visibility: "Agence",
-    version: 2,
-    expiresAt: "2026-09-30",
-    fileName: "rapport-incident.pdf",
-    size: 184000,
-    history: ["Creation", "Version 2"],
-  },
-  {
-    id: "doc-2",
-    title: "Quittance - Juillet 2026",
-    reference: "DOC-2026-0002",
-    category: "Quittances",
-    status: "brouillon",
-    visibility: "Locataire",
-    version: 1,
-    expiresAt: null,
-    fileName: "quittance-juillet.pdf",
-    size: 96000,
-    history: ["Creation depuis modele"],
-  },
-];
-
-function statusLabel(status: Doc["status"]) {
-  return { brouillon: "Brouillon", actif: "Actif", envoye: "Envoye", archive: "Archive" }[status];
-}
-
-function pdfUrl(doc: Doc) {
-  const body = `%PDF-1.3\n1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj\n4 0 obj << /Length 130 >> stream\nBT /F1 18 Tf 72 720 Td (GERIMMO V3) Tj 0 -32 Td (${doc.title.slice(0, 42)}) Tj 0 -28 Td (${doc.reference}) Tj ET\nendstream endobj\n5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF`;
-  return `data:application/pdf;base64,${btoa(body)}`;
-}
-
-export function DocumentsModule() {
+export function DocumentsModule({
+  initialPayload,
+  organizationId,
+}: {
+  initialPayload: DocumentsPayload;
+  organizationId: string | null;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const [docs, setDocs] = useState(initialDocs);
+  const [payload, setPayload] = useState(initialPayload);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("Toutes");
-  const [selectedId, setSelectedId] = useState("doc-1");
-  const selected = docs.find((doc) => doc.id === selectedId) ?? null;
+  const [selectedId, setSelectedId] = useState(initialPayload.documents[0]?.id ?? "");
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const selected = payload.documents.find((item) => item.id === selectedId) ?? null;
   const filtered = useMemo(
-    () => docs.filter((doc) => `${doc.title} ${doc.reference}`.toLowerCase().includes(query.toLowerCase()) && (category === "Toutes" || doc.category === category)),
-    [category, docs, query]
+    () =>
+      payload.documents.filter((item) => `${item.title} ${item.reference}`.toLowerCase().includes(query.toLowerCase())),
+    [payload.documents, query],
   );
 
-  function updateSelected(patch: Partial<Doc>, event: string) {
+  async function reload() {
+    const response = await fetch("/api/documents", { cache: "no-store" });
+    if (!response.ok) throw new Error("Actualisation impossible.");
+    setPayload((await response.json()) as DocumentsPayload);
+  }
+
+  async function openDocument(document: GerimmoDocument) {
+    setSelectedId(document.id);
+    setPreviewUrl(null);
+    if (!document.storage_path) return;
+    const response = await fetch(`/api/documents/${document.id}`);
+    if (response.ok) setPreviewUrl(((await response.json()) as { url: string }).url);
+  }
+
+  async function upload(file: File) {
+    if (!organizationId) throw new Error("Aucune organisation active.");
+    const form = new FormData();
+    form.set("file", file);
+    form.set("organization_id", organizationId);
+    form.set("title", file.name.replace(/\.[^.]+$/, ""));
+    const response = await fetch("/api/documents", { method: "POST", body: form });
+    if (!response.ok) throw new Error("Import impossible.");
+    const created = (await response.json()) as GerimmoDocument;
+    await reload();
+    setSelectedId(created.id);
+  }
+
+  async function setArchive(archive: boolean) {
     if (!selected) return;
-    setDocs((current) => current.map((doc) => (doc.id === selected.id ? { ...doc, ...patch, history: [event, ...doc.history] } : doc)));
-  }
-
-  function upload(file: File) {
-    const doc: Doc = {
-      id: crypto.randomUUID(),
-      title: file.name.replace(/\.[^.]+$/, ""),
-      reference: `DOC-${new Date().getFullYear()}-${String(docs.length + 1).padStart(4, "0")}`,
-      category: category === "Toutes" ? "Courriers" : category,
-      status: "actif",
-      visibility: "Organisation",
-      version: 1,
-      expiresAt: null,
-      fileName: file.name,
-      size: file.size,
-      history: ["Upload"],
-    };
-    setDocs((current) => [doc, ...current]);
-    setSelectedId(doc.id);
-  }
-
-  function createFromTemplate(name: string) {
-    const doc: Doc = {
-      id: crypto.randomUUID(),
-      title: name,
-      reference: `DOC-${new Date().getFullYear()}-${String(docs.length + 1).padStart(4, "0")}`,
-      category: name === "Quittance" ? "Quittances" : name === "Devis" ? "Devis" : "Courriers",
-      status: "brouillon",
-      visibility: name === "Quittance" ? "Locataire" : "Agence",
-      version: 1,
-      expiresAt: null,
-      fileName: `${name.toLowerCase().replaceAll(" ", "-")}.pdf`,
-      size: 0,
-      history: ["Creation depuis modele", "Pre-remplissage agence/proprietaire prepare"],
-    };
-    setDocs((current) => [doc, ...current]);
-    setSelectedId(doc.id);
-  }
-
-  function download() {
-    if (!selected) return;
-    const link = document.createElement("a");
-    link.href = pdfUrl(selected);
-    link.download = selected.fileName;
-    link.click();
-    updateSelected({}, "Telechargement");
-  }
-
-  function printDocument() {
-    if (!selected) return;
-    window.open(pdfUrl(selected), "_blank", "noopener,noreferrer")?.print();
-    updateSelected({}, "Impression");
-  }
-
-  function sendDocument() {
-    if (!selected) return;
-    updateSelected({ status: "envoye" }, "Envoi mail prepare");
-    window.location.href = `mailto:?subject=${encodeURIComponent(selected.title)}&body=${encodeURIComponent("Document GERIMMO pret a envoyer.")}`;
+    const response = await fetch(`/api/documents/${selected.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: archive ? "archive" : "restore" }),
+    });
+    if (!response.ok) throw new Error("Action impossible.");
+    await reload();
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-semibold text-2xl">Documents</h1>
-          <p className="text-muted-foreground text-sm">Bibliotheque documentaire officielle GERIMMO V3.</p>
+          <p className="text-muted-foreground text-sm">Bibliothèque sécurisée GERIMMO.</p>
         </div>
-        <div className="flex gap-2">
-          <input ref={fileRef} className="hidden" type="file" accept="application/pdf" onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])} />
-          <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload />Importer</Button>
-          <Button onClick={() => createFromTemplate("Courrier")}><FileText />Nouveau</Button>
+        <div>
+          <input
+            ref={fileRef}
+            className="hidden"
+            type="file"
+            accept="application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(event) => event.target.files?.[0] && upload(event.target.files[0])}
+          />
+          <Button size="sm" onClick={() => fileRef.current?.click()}>
+            <Upload data-icon="inline-start" />
+            Importer
+          </Button>
         </div>
+      </header>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Metric label="Documents" value={payload.documents.length} />
+        <Metric label="Alertes" value={payload.alerts.filter((item) => item.status === "a_traiter").length} />
+        <Metric label="Archives" value={payload.documents.filter((item) => item.status === "archive").length} />
       </div>
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <Card><CardHeader><CardTitle className="text-sm">Actifs</CardTitle></CardHeader><CardContent className="font-semibold text-2xl">{docs.filter((doc) => doc.status === "actif").length}</CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-sm">Modeles</CardTitle></CardHeader><CardContent className="font-semibold text-2xl">{templates.length}</CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-sm">Alertes</CardTitle></CardHeader><CardContent className="font-semibold text-2xl">1</CardContent></Card>
-        <Card><CardHeader><CardTitle className="text-sm">Archives</CardTitle></CardHeader><CardContent className="font-semibold text-2xl">{docs.filter((doc) => doc.status === "archive").length}</CardContent></Card>
+      <div className="relative">
+        <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Rechercher par titre ou référence"
+        />
       </div>
-
-      <div className="flex flex-wrap gap-2">
-        <div className="relative min-w-64 flex-1"><Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input className="pl-9" placeholder="Rechercher" value={query} onChange={(event) => setQuery(event.target.value)} /></div>
-        <select className="h-9 rounded-md border bg-background px-3 text-sm" value={category} onChange={(event) => setCategory(event.target.value)}><option>Toutes</option>{categories.map((item) => <option key={item}>{item}</option>)}</select>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[1fr_420px]">
-        <Card className="overflow-hidden">
-          <Table><TableHeader><TableRow><TableHead>Document</TableHead><TableHead>Categorie</TableHead><TableHead>Version</TableHead><TableHead>Droits</TableHead><TableHead>Statut</TableHead></TableRow></TableHeader><TableBody>{filtered.map((doc) => <TableRow key={doc.id} className="cursor-pointer" onClick={() => setSelectedId(doc.id)}><TableCell><div className="font-medium">{doc.title}</div><div className="text-muted-foreground text-xs">{doc.reference}</div></TableCell><TableCell>{doc.category}</TableCell><TableCell>v{doc.version}</TableCell><TableCell>{doc.visibility}</TableCell><TableCell><Badge>{statusLabel(doc.status)}</Badge></TableCell></TableRow>)}</TableBody></Table>
-        </Card>
-        {selected ? <Card><CardHeader><CardTitle className="text-base">Visualiseur PDF GERIMMO</CardTitle></CardHeader><CardContent className="flex flex-col gap-3"><iframe className="h-72 rounded-md border" title="Visualiseur PDF GERIMMO" src={pdfUrl(selected)} /><div className="grid grid-cols-2 gap-2"><Button variant="outline" onClick={download}><Download />Telecharger</Button><Button variant="outline" onClick={printDocument}><Printer />Imprimer</Button><Button variant="outline" onClick={sendDocument}><Send />Envoyer</Button><Button variant="outline" onClick={() => updateSelected({ version: selected.version + 1 }, "Nouvelle version")}><History />Versionner</Button></div><Button variant="secondary" onClick={() => updateSelected(selected.status === "archive" ? { status: "actif" } : { status: "archive" }, selected.status === "archive" ? "Restauration" : "Archivage")}>{selected.status === "archive" ? <RotateCcw /> : <Archive />}{selected.status === "archive" ? "Restaurer" : "Archiver"}</Button></CardContent></Card> : null}
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">{templates.map((template) => <Button key={template} variant="outline" onClick={() => createFromTemplate(template)}>{template}</Button>)}</div>
-
-      {selected ? <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelectedId("")}><SheetContent className="overflow-y-auto sm:max-w-xl"><SheetHeader><SheetTitle>{selected.title}</SheetTitle></SheetHeader><div className="grid gap-4 px-4 pb-6 text-sm"><iframe className="h-80 rounded-md border" title="PDF officiel GERIMMO" src={pdfUrl(selected)} /><div className="rounded-md border p-3">Pre-remplissage : agence GERIMMO, proprietaire personnalisable.</div><div className="rounded-md border p-3">Droits : {selected.visibility}. RLS Supabase active.</div><div className="rounded-md border p-3">Alerte expiration : {selected.expiresAt ?? "aucune"}.</div><div className="rounded-md border p-3">Mail prepare. Contexte bot conserve sans developper le bot.</div><div className="grid gap-2">{selected.history.map((item) => <div key={item} className="rounded-md border p-2">{item}</div>)}</div><Button variant="outline"><Mail />Envoi par e-mail prepare</Button></div></SheetContent></Sheet> : null}
+      <Card className="overflow-hidden">
+        <CardContent className="p-0">
+          {filtered.length ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Document</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Version</TableHead>
+                  <TableHead>Visibilité</TableHead>
+                  <TableHead>Statut</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((document) => (
+                  <TableRow key={document.id} className="cursor-pointer" onClick={() => openDocument(document)}>
+                    <TableCell>
+                      <div className="font-medium">{document.title}</div>
+                      <div className="text-muted-foreground text-xs">{document.reference}</div>
+                    </TableCell>
+                    <TableCell>{document.document_type.replaceAll("_", " ")}</TableCell>
+                    <TableCell>v{document.current_version}</TableCell>
+                    <TableCell>{document.visibility}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{statusLabels[document.status]}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          ) : (
+            <Empty>
+              <EmptyHeader>
+                <FileText />
+                <EmptyTitle>Aucun document</EmptyTitle>
+                <EmptyDescription>Importez le premier document de cette organisation.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+        </CardContent>
+      </Card>
+      <Sheet open={Boolean(selected)} onOpenChange={(open) => !open && setSelectedId("")}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          {selected && (
+            <>
+              <SheetHeader>
+                <SheetTitle>{selected.title}</SheetTitle>
+                <SheetDescription>
+                  {selected.reference} · version {selected.current_version}
+                </SheetDescription>
+              </SheetHeader>
+              <div className="flex flex-col gap-4 px-4 pb-6">
+                {previewUrl ? (
+                  <iframe src={previewUrl} title={selected.title} className="h-[60vh] rounded-md border" />
+                ) : (
+                  <Empty>
+                    <EmptyHeader>
+                      <FileText />
+                      <EmptyTitle>Aucun aperçu</EmptyTitle>
+                      <EmptyDescription>Le document ne possède pas encore de fichier.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  {previewUrl && (
+                    <Button asChild variant="outline">
+                      <a href={previewUrl} download={selected.file_name ?? undefined}>
+                        <Download data-icon="inline-start" />
+                        Télécharger
+                      </a>
+                    </Button>
+                  )}
+                  <Button variant="outline" onClick={() => setArchive(selected.status !== "archive")}>
+                    {selected.status === "archive" ? (
+                      <RotateCcw data-icon="inline-start" />
+                    ) : (
+                      <Archive data-icon="inline-start" />
+                    )}
+                    {selected.status === "archive" ? "Restaurer" : "Archiver"}
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-muted-foreground text-sm">{label}</CardTitle>
+      </CardHeader>
+      <CardContent className="font-semibold text-2xl">{value}</CardContent>
+    </Card>
   );
 }

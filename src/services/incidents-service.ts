@@ -64,7 +64,12 @@ export async function createIncident(input: CreateIncidentInput) {
 
 export async function updateIncident({ id, ...input }: UpdateIncidentInput) {
   const supabase = await createClient();
-  const { data, error } = await supabase.from("incidents").update(input as never).eq("id", id).select("*").single();
+  const { data, error } = await supabase
+    .from("incidents")
+    .update(input as never)
+    .eq("id", id)
+    .select("*")
+    .single();
 
   if (error) {
     throw error;

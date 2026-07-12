@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 
-import { archiveQuoteRequest, receiveQuote, selectQuote, sendQuoteRequest, updateQuoteRequest } from "@/services/incident-quotes-service";
+import {
+  archiveQuoteRequest,
+  receiveQuote,
+  selectQuote,
+  sendQuoteRequest,
+  updateQuoteRequest,
+} from "@/services/incident-quotes-service";
 
 type RouteContext = {
   params: Promise<{ requestId: string }>;
@@ -29,6 +35,9 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json(await updateQuoteRequest({ id: requestId, ...body }));
   } catch (error) {
-    return NextResponse.json({ message: error instanceof Error ? error.message : "Modification impossible." }, { status: 500 });
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : "Modification impossible." },
+      { status: 500 },
+    );
   }
 }

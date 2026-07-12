@@ -1,12 +1,12 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createUserClient } from "@/lib/supabase/server";
+import { applyBrandIdentity } from "@/services/bot/brand-rules";
+import { resolveBotBrandIdentity } from "@/services/bot/branding";
 import {
   allowedTenantDocumentTypes,
   classifyMessage,
   parseAvailabilitySlots,
 } from "@/services/bot/message-understanding";
-import { applyBrandIdentity } from "@/services/bot/brand-rules";
-import { resolveBotBrandIdentity } from "@/services/bot/branding";
 import { TelegramAdapter } from "@/services/bot/telegram-adapter";
 import type {
   BotAdminPayload,

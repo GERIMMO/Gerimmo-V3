@@ -1,9 +1,21 @@
 import type { IncidentPhoto } from "@/types/incidents";
 
-export type InterventionStatus = "planifiee" | "confirmee" | "en_cours" | "suspendue" | "terminee" | "annulee" | "a_reprogrammer";
+export type InterventionStatus =
+  | "planifiee"
+  | "confirmee"
+  | "en_cours"
+  | "suspendue"
+  | "terminee"
+  | "annulee"
+  | "a_reprogrammer";
 export type InterventionMode = "artisan_gerimmo" | "artisan_prive" | "interne";
 export type InterventionReportStatus = "brouillon" | "previsualise" | "modifie" | "genere" | "valide" | "archive";
-export type ClosureAction = "validation" | "correction" | "nouvelle_intervention" | "cloture_reserve" | "cloture_normale";
+export type ClosureAction =
+  | "validation"
+  | "correction"
+  | "nouvelle_intervention"
+  | "cloture_reserve"
+  | "cloture_normale";
 export type EvaluatorRole = "locataire" | "responsable";
 
 export type IncidentIntervention = {
@@ -120,7 +132,13 @@ export type IncidentClosureReview = {
   report_id: string;
   responsible_profile_id: string | null;
   action: ClosureAction;
-  status: "a_verifier" | "valide" | "correction_demandee" | "nouvelle_intervention" | "cloture_reserve" | "cloture_normale";
+  status:
+    | "a_verifier"
+    | "valide"
+    | "correction_demandee"
+    | "nouvelle_intervention"
+    | "cloture_reserve"
+    | "cloture_normale";
   comment: string | null;
   reserve_details: string | null;
   correction_requested: string | null;
@@ -215,13 +233,28 @@ export type CreateReportInput = {
   observations?: string | null;
 };
 
-export type UpdateReportInput = Partial<Pick<InterventionReport, "status" | "report_data" | "observations" | "validation_comment" | "validated_by">> & {
+export type UpdateReportInput = Partial<
+  Pick<InterventionReport, "status" | "report_data" | "observations" | "validation_comment" | "validated_by">
+> & {
   id: string;
   action?: "preview" | "edit" | "generate" | "validate" | "download" | "print" | "prepare_email" | "archive";
 };
 
-export type CreateClosureInput = Pick<IncidentClosureReview, "organization_id" | "incident_id" | "intervention_id" | "report_id" | "action"> &
-  Partial<Pick<IncidentClosureReview, "responsible_profile_id" | "comment" | "reserve_details" | "correction_requested" | "new_intervention_required" | "created_by">>;
+export type CreateClosureInput = Pick<
+  IncidentClosureReview,
+  "organization_id" | "incident_id" | "intervention_id" | "report_id" | "action"
+> &
+  Partial<
+    Pick<
+      IncidentClosureReview,
+      | "responsible_profile_id"
+      | "comment"
+      | "reserve_details"
+      | "correction_requested"
+      | "new_intervention_required"
+      | "created_by"
+    >
+  >;
 
 export type CreateEvaluationInput = Pick<
   ArtisanEvaluation,
