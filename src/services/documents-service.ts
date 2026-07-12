@@ -14,6 +14,8 @@ import type {
   VersionDocumentInput,
 } from "@/types/documents";
 
+import { getMirrorOrganizationId } from "./administration-service";
+
 export async function listDocuments(): Promise<DocumentsPayload> {
   const supabase = await createClient();
   const [categories, templates, documents, versions, events, alerts, emails] = await Promise.all([
@@ -39,15 +41,30 @@ export async function listDocuments(): Promise<DocumentsPayload> {
       throw result.error;
     }
   }
+  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const scopedDocuments = ((documents.data ?? []) as GerimmoDocument[]).filter(
+    (document) => !mirrorOrganizationId || document.organization_id === mirrorOrganizationId,
+  );
+  const documentIds = new Set(scopedDocuments.map((document) => document.id));
 
   return {
-    categories: (categories.data ?? []) as DocumentCategory[],
+    categories: ((categories.data ?? []) as DocumentCategory[]).filter(
+      (item) => !mirrorOrganizationId || item.organization_id === null || item.organization_id === mirrorOrganizationId,
+    ),
     templates: (templates.data ?? []) as DocumentTemplate[],
-    documents: (documents.data ?? []) as GerimmoDocument[],
-    versions: (versions.data ?? []) as DocumentVersion[],
-    events: (events.data ?? []) as DocumentEvent[],
-    alerts: (alerts.data ?? []) as DocumentAlert[],
-    emails: (emails.data ?? []) as DocumentEmail[],
+    documents: scopedDocuments,
+    versions: ((versions.data ?? []) as DocumentVersion[]).filter(
+      (item) => !mirrorOrganizationId || documentIds.has(item.document_id),
+    ),
+    events: ((events.data ?? []) as DocumentEvent[]).filter(
+      (item) => !mirrorOrganizationId || (item.document_id ? documentIds.has(item.document_id) : false),
+    ),
+    alerts: ((alerts.data ?? []) as DocumentAlert[]).filter(
+      (item) => !mirrorOrganizationId || documentIds.has(item.document_id),
+    ),
+    emails: ((emails.data ?? []) as DocumentEmail[]).filter(
+      (item) => !mirrorOrganizationId || documentIds.has(item.document_id),
+    ),
   };
 }
 

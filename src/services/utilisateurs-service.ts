@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { InviteUserInput, UpdateUserInput, UsersPayload } from "@/types/utilisateurs";
 
+import { getMirrorOrganizationId } from "./administration-service";
 import { createHash, randomBytes } from "node:crypto";
 
 type MemberRecord = {
@@ -53,34 +54,43 @@ export async function listUsers(): Promise<UsersPayload> {
     }
   }
 
-  const users = ((members.data ?? []) as MemberRecord[]).map((member) => {
-    const role = member.member_role_assignments?.[0]?.roles;
-    const details = member.user_profile_details?.[0];
-    return {
-      id: member.id,
-      profile_id: member.profile_id,
-      organization_id: member.organization_id,
-      organization_name: member.organizations?.name ?? "Organisation",
-      full_name: member.profiles?.full_name ?? "Utilisateur",
-      email: member.profiles?.email ?? "",
-      phone: member.profiles?.phone ?? null,
-      member_type: member.member_type,
-      role_key: role?.key ?? "locataire",
-      role_name: role?.name ?? "Role a definir",
-      status: member.status,
-      job_title: details?.job_title ?? null,
-      city: details?.city ?? null,
-      last_seen_at: details?.last_seen_at ?? null,
-      created_at: member.created_at,
-      archived_at: member.archived_at,
-    };
-  });
+  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const users = ((members.data ?? []) as MemberRecord[])
+    .filter((member) => !mirrorOrganizationId || member.organization_id === mirrorOrganizationId)
+    .map((member) => {
+      const role = member.member_role_assignments?.[0]?.roles;
+      const details = member.user_profile_details?.[0];
+      return {
+        id: member.id,
+        profile_id: member.profile_id,
+        organization_id: member.organization_id,
+        organization_name: member.organizations?.name ?? "Organisation",
+        full_name: member.profiles?.full_name ?? "Utilisateur",
+        email: member.profiles?.email ?? "",
+        phone: member.profiles?.phone ?? null,
+        member_type: member.member_type,
+        role_key: role?.key ?? "locataire",
+        role_name: role?.name ?? "Role a definir",
+        status: member.status,
+        job_title: details?.job_title ?? null,
+        city: details?.city ?? null,
+        last_seen_at: details?.last_seen_at ?? null,
+        created_at: member.created_at,
+        archived_at: member.archived_at,
+      };
+    });
 
   return {
     users,
-    invitations: invitations.data ?? [],
-    activities: activities.data ?? [],
-    statusHistory: statusHistory.data ?? [],
+    invitations: ((invitations.data ?? []) as UsersPayload["invitations"]).filter(
+      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+    ),
+    activities: ((activities.data ?? []) as UsersPayload["activities"]).filter(
+      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+    ),
+    statusHistory: ((statusHistory.data ?? []) as UsersPayload["statusHistory"]).filter(
+      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+    ),
   } as UsersPayload;
 }
 

@@ -8,6 +8,8 @@ import type {
   UpdateIncidentInput,
 } from "@/types/incidents";
 
+import { getMirrorOrganizationId } from "./administration-service";
+
 const futureLinks = {
   devis: [],
   interventions: [],
@@ -32,11 +34,19 @@ export async function listIncidents(): Promise<IncidentsPayload> {
       throw result.error;
     }
   }
+  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const visibleIncidents = (incidents.data ?? []) as GerimmoIncident[];
+  const scopedIncidents = mirrorOrganizationId
+    ? visibleIncidents.filter((incident) => incident.organization_id === mirrorOrganizationId)
+    : visibleIncidents;
+  const incidentIds = new Set(scopedIncidents.map((incident) => incident.id));
 
   return {
     categories: (categories.data ?? []) as IncidentCategory[],
-    incidents: (incidents.data ?? []) as GerimmoIncident[],
-    events: (events.data ?? []) as IncidentEvent[],
+    incidents: scopedIncidents,
+    events: ((events.data ?? []) as IncidentEvent[]).filter(
+      (event) => !mirrorOrganizationId || (event.incident_id ? incidentIds.has(event.incident_id) : false),
+    ),
   };
 }
 

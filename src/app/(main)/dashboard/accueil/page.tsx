@@ -1,5 +1,7 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { getPilotage } from "@/services/administration-service";
 
-export default function Page() {
-  return <ModulePlaceholder title="Accueil" />;
+import { PilotageDashboard } from "../_components/pilotage-dashboard";
+
+export default async function Page() {
+  return <PilotageDashboard payload={await getPilotage()} />;
 }

@@ -13,6 +13,8 @@ import type {
   UpdateBienInput,
 } from "@/types/patrimoine";
 
+import { getMirrorOrganizationId } from "./administration-service";
+
 export async function listPatrimoine(): Promise<PatrimoinePayload> {
   const supabase = await createClient();
   const [patrimoines, residences, biens, occupants, echeances, historique] = await Promise.all([
@@ -40,14 +42,29 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
       throw result.error;
     }
   }
+  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const scopedBiens = ((biens.data ?? []) as Bien[]).filter(
+    (bien) => !mirrorOrganizationId || bien.organization_id === mirrorOrganizationId,
+  );
+  const bienIds = new Set(scopedBiens.map((bien) => bien.id));
 
   return {
-    patrimoines: (patrimoines.data ?? []) as Patrimoine[],
-    residences: (residences.data ?? []) as Residence[],
-    biens: (biens.data ?? []) as Bien[],
-    occupants: (occupants.data ?? []) as BienOccupant[],
-    echeances: (echeances.data ?? []) as BienEcheance[],
-    historique: (historique.data ?? []) as BienHistorique[],
+    patrimoines: ((patrimoines.data ?? []) as Patrimoine[]).filter(
+      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+    ),
+    residences: ((residences.data ?? []) as Residence[]).filter(
+      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+    ),
+    biens: scopedBiens,
+    occupants: ((occupants.data ?? []) as BienOccupant[]).filter(
+      (item) => !mirrorOrganizationId || bienIds.has(item.bien_id),
+    ),
+    echeances: ((echeances.data ?? []) as BienEcheance[]).filter(
+      (item) => !mirrorOrganizationId || bienIds.has(item.bien_id),
+    ),
+    historique: ((historique.data ?? []) as BienHistorique[]).filter(
+      (item) => !mirrorOrganizationId || (item.bien_id ? bienIds.has(item.bien_id) : false),
+    ),
   };
 }
 

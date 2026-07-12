@@ -14,7 +14,9 @@ import { requireUser } from "@/lib/auth/guards";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
 import { getPreference } from "@/server/server-actions";
+import { getMirrorOrganizationId } from "@/services/administration-service";
 
+import { MirrorBanner } from "./_components/mirror-banner";
 import { AccountSwitcher } from "./_components/sidebar/account-switcher";
 import { LayoutControls } from "./_components/sidebar/layout-controls";
 import { SearchDialog } from "./_components/sidebar/search-dialog";
@@ -36,6 +38,10 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
     role: profile?.is_super_admin ? "Super Admin" : "Membre GERIMMO",
   };
   const cookieStore = await cookies();
+  const mirrorOrganizationId = profile?.is_super_admin ? await getMirrorOrganizationId() : null;
+  const { data: mirrorOrganization } = mirrorOrganizationId
+    ? await supabase.from("organizations").select("name").eq("id", mirrorOrganizationId).maybeSingle()
+    : { data: null };
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
   const [variant, collapsible] = await Promise.all([
     getPreference("sidebar_variant"),
@@ -95,6 +101,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
             </div>
           </div>
         </header>
+        {mirrorOrganization?.name ? <MirrorBanner organizationName={mirrorOrganization.name} /> : null}
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
           {children}
         </div>

@@ -1,5 +1,7 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { getAdminDashboard } from "@/services/administration-service";
 
-export default function Page() {
-  return <ModulePlaceholder title="Super Admin" />;
+import { SuperAdminConsole } from "./_components/super-admin-console";
+
+export default async function Page() {
+  return <SuperAdminConsole initialPayload={await getAdminDashboard()} />;
 }

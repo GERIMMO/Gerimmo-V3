@@ -58,6 +58,12 @@ export async function getOrganizationBranding(organizationId?: string): Promise<
     support_email: stringOrNull(branding.support_email),
     support_phone: stringOrNull(branding.support_phone),
     opening_hours: stringOrNull(branding.opening_hours),
+    legal_name: stringOrNull(branding.legal_name),
+    address_line1: stringOrNull(branding.address_line1),
+    postal_code: stringOrNull(branding.postal_code),
+    city: stringOrNull(branding.city),
+    primary_color: stringOrNull(branding.primary_color),
+    official_signature: stringOrNull(branding.official_signature),
     updated_at: stringOrNull(branding.updated_at),
   };
 }
@@ -96,6 +102,12 @@ export async function saveOrganizationBranding(input: OrganizationBrandingInput)
         support_email: null,
         support_phone: null,
         opening_hours: null,
+        legal_name: null,
+        address_line1: null,
+        postal_code: null,
+        city: null,
+        primary_color: null,
+        official_signature: null,
       }
     : {
         organization_id: organization.id,
@@ -107,6 +119,12 @@ export async function saveOrganizationBranding(input: OrganizationBrandingInput)
         support_email: clean(input.support_email),
         support_phone: clean(input.support_phone),
         opening_hours: clean(input.opening_hours),
+        legal_name: clean(input.legal_name),
+        address_line1: clean(input.address_line1),
+        postal_code: clean(input.postal_code),
+        city: clean(input.city),
+        primary_color: clean(input.primary_color),
+        official_signature: clean(input.official_signature),
       };
 
   const result = await supabase

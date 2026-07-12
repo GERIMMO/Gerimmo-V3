@@ -11,6 +11,12 @@ export type OrganizationBranding = {
   support_email: string | null;
   support_phone: string | null;
   opening_hours: string | null;
+  legal_name: string | null;
+  address_line1: string | null;
+  postal_code: string | null;
+  city: string | null;
+  primary_color: string | null;
+  official_signature: string | null;
   updated_at: string | null;
 };
 
@@ -35,5 +41,11 @@ export type OrganizationBrandingInput = {
   support_email?: string | null;
   support_phone?: string | null;
   opening_hours?: string | null;
+  legal_name?: string | null;
+  address_line1?: string | null;
+  postal_code?: string | null;
+  city?: string | null;
+  primary_color?: string | null;
+  official_signature?: string | null;
   restore?: boolean;
 };

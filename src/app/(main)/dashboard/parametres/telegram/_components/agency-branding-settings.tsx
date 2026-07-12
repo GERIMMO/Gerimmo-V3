@@ -114,6 +114,9 @@ export function AgencyBrandingSettings({
             <Field label="Nom commercial">
               <Input value={form.display_name ?? ""} onChange={(event) => update("display_name", event.target.value)} />
             </Field>
+            <Field label="Raison sociale">
+              <Input value={form.legal_name ?? ""} onChange={(event) => update("legal_name", event.target.value)} />
+            </Field>
             <Field label="Logo (URL)">
               <Input value={form.logo_url ?? ""} onChange={(event) => update("logo_url", event.target.value)} />
             </Field>
@@ -134,6 +137,31 @@ export function AgencyBrandingSettings({
               <Input
                 value={form.opening_hours ?? ""}
                 onChange={(event) => update("opening_hours", event.target.value)}
+              />
+            </Field>
+            <Field label="Adresse" className="md:col-span-2">
+              <Input
+                value={form.address_line1 ?? ""}
+                onChange={(event) => update("address_line1", event.target.value)}
+              />
+            </Field>
+            <Field label="Code postal">
+              <Input value={form.postal_code ?? ""} onChange={(event) => update("postal_code", event.target.value)} />
+            </Field>
+            <Field label="Ville">
+              <Input value={form.city ?? ""} onChange={(event) => update("city", event.target.value)} />
+            </Field>
+            <Field label="Couleur principale">
+              <Input
+                type="color"
+                value={form.primary_color ?? "#244a7c"}
+                onChange={(event) => update("primary_color", event.target.value)}
+              />
+            </Field>
+            <Field label="Signature officielle">
+              <Input
+                value={form.official_signature ?? ""}
+                onChange={(event) => update("official_signature", event.target.value)}
               />
             </Field>
             <Field label="Formule d accueil" className="md:col-span-2">

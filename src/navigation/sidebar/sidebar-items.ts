@@ -7,6 +7,7 @@ import {
   Database,
   File,
   LayoutDashboard,
+  ListChecks,
   Lock,
   type LucideIcon,
   MessageSquare,
@@ -62,6 +63,12 @@ export const sidebarItems: NavGroup[] = [
         title: "Accueil",
         url: "/dashboard/accueil",
         icon: LayoutDashboard,
+      },
+      {
+        id: "a-faire",
+        title: "À faire",
+        url: "/dashboard/a-faire",
+        icon: ListChecks,
       },
       {
         id: "incidents",
@@ -132,8 +139,13 @@ export const sidebarItems: NavGroup[] = [
       {
         id: "super-admin",
         title: "Super Admin",
-        url: "/dashboard/super-admin",
         icon: Lock,
+        subItems: [
+          { id: "super-admin-overview", title: "Vue nationale", url: "/dashboard/super-admin" },
+          { id: "super-admin-imports", title: "Imports", url: "/dashboard/super-admin/imports" },
+          { id: "super-admin-articles", title: "Publications", url: "/dashboard/super-admin/articles" },
+          { id: "super-admin-telegram", title: "Telegram", url: "/dashboard/super-admin/telegram" },
+        ],
       },
     ],
   },
