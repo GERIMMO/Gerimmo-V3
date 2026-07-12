@@ -21,6 +21,16 @@ test("les surfaces critiques existent et restent protégées", async ({ page, re
   expect(quality.status()).toBe(401);
 });
 
+test("le parcours public présente la valeur et mène à l'essai", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "GERIMMO" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Essai gratuit de 14 jours/ })).toBeVisible();
+  for (const route of ["/tarifs", "/demonstration", "/aide", "/pourquoi-gerimmo", "/contact"]) {
+    await page.goto(route);
+    await expect(page.locator("h1")).toBeVisible();
+  }
+});
+
 test("parcours client complet authentifié", async ({ page }) => {
   test.skip(!process.env.E2E_USER_EMAIL || !process.env.E2E_USER_PASSWORD, "Identifiants E2E dédiés requis.");
   await page.goto("/auth/v2/login");

@@ -91,7 +91,8 @@ export async function updateSession(request: NextRequest) {
     pathname === "/api/stripe/webhook" ||
     pathname === "/api/automations/business" ||
     pathname === "/api/cron/production-health";
-  if (!isAuthenticated && pathname.startsWith("/api/") && !isPublicWebhook) {
+  const isPublicCommercial = pathname === "/api/commercial";
+  if (!isAuthenticated && pathname.startsWith("/api/") && !isPublicWebhook && !isPublicCommercial) {
     return NextResponse.json({ message: "Authentification requise." }, { status: 401 });
   }
 

@@ -147,6 +147,7 @@ export const sidebarItems: NavGroup[] = [
           { id: "super-admin-articles", title: "Publications", url: "/dashboard/super-admin/articles" },
           { id: "super-admin-business", title: "Business", url: "/dashboard/super-admin/business" },
           { id: "super-admin-quality", title: "Centre Qualité", url: "/dashboard/super-admin/qualite" },
+          { id: "super-admin-marketing", title: "Marketing", url: "/dashboard/super-admin/marketing" },
           { id: "super-admin-telegram", title: "Telegram", url: "/dashboard/super-admin/telegram" },
         ],
       },

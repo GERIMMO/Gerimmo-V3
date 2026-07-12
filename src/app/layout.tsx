@@ -14,8 +14,33 @@ import { PreferencesStoreProvider } from "@/stores/preferences/preferences-provi
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: APP_CONFIG.meta.title,
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_APP_URL ?? "https://next-js-and-shadcn-ui-admin-dashboard-gerimmo.vercel.app",
+  ),
+  title: { default: APP_CONFIG.meta.title, template: "%s | GERIMMO" },
   description: APP_CONFIG.meta.description,
+  applicationName: "GERIMMO",
+  openGraph: {
+    type: "website",
+    locale: "fr_FR",
+    siteName: "GERIMMO",
+    title: "GERIMMO — La gestion immobilière, enfin simple",
+    description: "Biens, incidents, documents et interventions dans une plateforme française sécurisée.",
+    images: [
+      {
+        url: "/marketing/gerimmo-agency-hero.png",
+        width: 1680,
+        height: 945,
+        alt: "GERIMMO pour les professionnels de l’immobilier",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "GERIMMO",
+    description: "La gestion immobilière, enfin simple.",
+    images: ["/marketing/gerimmo-agency-hero.png"],
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
