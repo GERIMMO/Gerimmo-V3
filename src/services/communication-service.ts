@@ -14,6 +14,7 @@ import type {
   NotificationType,
 } from "@/types/communication";
 
+import { assertSupervisionProfile, getSupervisionDataScope } from "./supervision-service";
 import { randomUUID } from "node:crypto";
 
 async function getContext() {
@@ -22,6 +23,16 @@ async function getContext() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Authentification requise.");
+  const supervision = await getSupervisionDataScope();
+  if (supervision) {
+    return {
+      supabase,
+      user,
+      organizationId: supervision.organizationId,
+      portalProfileId: supervision.profileIds?.includes(supervision.targetId) ? supervision.targetId : user.id,
+      supervision,
+    };
+  }
   const membership = await supabase
     .from("organization_members")
     .select("organization_id")
@@ -31,11 +42,17 @@ async function getContext() {
     .limit(1)
     .maybeSingle();
   if (!membership.data) throw new Error("Aucune organisation active.");
-  return { supabase, user, organizationId: membership.data.organization_id };
+  return {
+    supabase,
+    user,
+    organizationId: membership.data.organization_id,
+    portalProfileId: user.id,
+    supervision: null,
+  };
 }
 
 export async function getCommunicationPayload(): Promise<CommunicationPayload> {
-  const { supabase, user, organizationId } = await getContext();
+  const { supabase, organizationId, portalProfileId, supervision } = await getContext();
   const [
     notifications,
     conversations,
@@ -51,30 +68,35 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
     supabase
       .from("communication_notifications" as never)
       .select("*")
-      .eq("recipient_profile_id", user.id)
+      .eq("organization_id", organizationId)
+      .eq("recipient_profile_id", portalProfileId)
       .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(300),
     supabase
       .from("communication_conversations" as never)
       .select("*")
+      .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("last_message_at", { ascending: false, nullsFirst: false })
       .limit(150),
     supabase
       .from("communication_participants" as never)
       .select("*,profiles(full_name,email)")
+      .eq("organization_id", organizationId)
       .is("archived_at", null)
       .limit(500),
     supabase
       .from("communication_messages" as never)
       .select("*,profiles:sender_profile_id(full_name)")
+      .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("created_at", { ascending: true })
       .limit(1000),
     supabase
       .from("communication_attachments" as never)
       .select("*")
+      .eq("organization_id", organizationId)
       .is("archived_at", null)
       .order("created_at", { ascending: true })
       .limit(500),
@@ -82,25 +104,26 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
       .from("communication_preferences" as never)
       .select("*")
       .eq("organization_id", organizationId)
-      .eq("profile_id", user.id)
+      .eq("profile_id", portalProfileId)
       .is("archived_at", null)
       .maybeSingle(),
     supabase
       .from("communication_activity_events" as never)
       .select("*")
-      .eq("profile_id", user.id)
+      .eq("organization_id", organizationId)
+      .eq("profile_id", portalProfileId)
       .order("created_at", { ascending: false })
       .limit(500),
     supabase
       .from("audit_logs")
       .select("id,organization_id,actor_profile_id,action,table_name,record_id,created_at")
-      .eq("actor_profile_id", user.id)
+      .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
       .limit(300),
     supabase
       .from("user_activity_logs" as never)
       .select("id,organization_id,profile_id,actor_profile_id,action,created_at")
-      .or(`profile_id.eq.${user.id},actor_profile_id.eq.${user.id}`)
+      .eq("organization_id", organizationId)
       .order("created_at", { ascending: false })
       .limit(300),
     supabase
@@ -127,27 +150,52 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
     if (result.error) throw result.error;
   }
 
-  const profileIds = (profiles.data ?? []).map((row) => row.profile_id);
+  const organizationProfileIds = (profiles.data ?? []).map((row) => row.profile_id);
+  const profileIds = supervision?.profileIds ?? organizationProfileIds;
   const profileRows = profileIds.length
     ? await supabase.from("profiles").select("id,full_name,email").in("id", profileIds).is("archived_at", null)
     : { data: [], error: null };
   if (profileRows.error) throw profileRows.error;
 
+  const allConversations = (conversations.data ?? []) as CommunicationConversation[];
+  const allParticipants = (participants.data ?? []) as CommunicationParticipant[];
+  const allMessages = (messages.data ?? []) as CommunicationMessage[];
+  const allAttachments = (attachments.data ?? []) as CommunicationAttachment[];
+  const allowedProfileIds = supervision?.profileIds ? new Set(supervision.profileIds) : null;
+  const visibleConversationIds = new Set(
+    allowedProfileIds
+      ? allParticipants
+          .filter((participant) => allowedProfileIds.has(participant.profile_id))
+          .map((participant) => participant.conversation_id)
+      : allConversations.map((conversation) => conversation.id),
+  );
+  const visibleMessages = allMessages.filter((message) => visibleConversationIds.has(message.conversation_id));
+  const visibleMessageIds = new Set(visibleMessages.map((message) => message.id));
+  const visibleAuditActivity = (auditActivity.data ?? []).filter(
+    (event) =>
+      !allowedProfileIds ||
+      (event.actor_profile_id ? allowedProfileIds.has(event.actor_profile_id) : false) ||
+      (event.record_id ? allowedProfileIds.has(event.record_id) : false),
+  );
+  const visibleUserActivity = (userActivity.data ?? []).filter((event) => {
+    const row = event as Record<string, unknown>;
+    return !allowedProfileIds || allowedProfileIds.has(String(row.profile_id));
+  });
   const preferenceRow = preferences.data as Record<string, unknown> | null;
   return {
-    currentProfileId: user.id,
+    currentProfileId: portalProfileId,
     organizationId,
     notifications: (notifications.data ?? []) as CommunicationNotification[],
-    conversations: (conversations.data ?? []) as CommunicationConversation[],
-    participants: (participants.data ?? []) as CommunicationParticipant[],
-    messages: (messages.data ?? []) as CommunicationMessage[],
-    attachments: (attachments.data ?? []) as CommunicationAttachment[],
+    conversations: allConversations.filter((conversation) => visibleConversationIds.has(conversation.id)),
+    participants: allParticipants.filter((participant) => visibleConversationIds.has(participant.conversation_id)),
+    messages: visibleMessages,
+    attachments: allAttachments.filter((attachment) => visibleMessageIds.has(attachment.message_id)),
     preferences: preferenceRow
       ? (preferenceRow as unknown as CommunicationPreferences)
       : {
           id: null,
           organization_id: organizationId,
-          profile_id: user.id,
+          profile_id: portalProfileId,
           application_enabled: true,
           email_enabled: true,
           telegram_enabled: false,
@@ -157,10 +205,10 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
         },
     activity: [
       ...((activity.data ?? []) as CommunicationActivity[]),
-      ...(auditActivity.data ?? []).map((event) => ({
+      ...visibleAuditActivity.map((event) => ({
         id: event.id,
         organization_id: event.organization_id ?? organizationId,
-        profile_id: user.id,
+        profile_id: portalProfileId,
         actor_profile_id: event.actor_profile_id,
         category: auditCategory(event.table_name),
         action: event.action,
@@ -170,7 +218,7 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
         entity_id: event.record_id,
         created_at: event.created_at,
       })),
-      ...(userActivity.data ?? []).map((event) => ({
+      ...visibleUserActivity.map((event) => ({
         id: String((event as Record<string, unknown>).id),
         organization_id: String((event as Record<string, unknown>).organization_id),
         profile_id: String((event as Record<string, unknown>).profile_id),
@@ -219,6 +267,7 @@ export async function createCommunicationNotification(input: {
   action_url?: string | null;
 }) {
   const { supabase, user, organizationId } = await getContext();
+  await assertSupervisionProfile(input.recipient_profile_id, organizationId);
   const result = await supabase
     .from("communication_notifications" as never)
     .insert({
@@ -238,12 +287,14 @@ export async function createCommunicationNotification(input: {
 }
 
 export async function markNotificationRead(notificationId: string, read: boolean) {
-  const { supabase, user } = await getContext();
+  const { supabase, organizationId, portalProfileId, supervision } = await getContext();
+  if (supervision?.profileIds) await assertSupervisionProfile(portalProfileId, organizationId);
   const result = await supabase
     .from("communication_notifications" as never)
     .update({ read_at: read ? new Date().toISOString() : null } as never)
     .eq("id", notificationId)
-    .eq("recipient_profile_id", user.id)
+    .eq("organization_id", organizationId)
+    .eq("recipient_profile_id", portalProfileId)
     .select("*")
     .single();
   if (result.error) throw result.error;
@@ -251,7 +302,7 @@ export async function markNotificationRead(notificationId: string, read: boolean
 }
 
 export async function createCommunicationConversation(input: CreateConversationInput) {
-  const { supabase, user, organizationId } = await getContext();
+  const { supabase, user, organizationId, supervision } = await getContext();
   if (input.organization_id !== organizationId) throw new Error("Organisation non autorisee.");
   const recipients = [...new Set(input.participant_profile_ids.filter((id) => id !== user.id))];
   const allowed = await supabase
@@ -262,6 +313,9 @@ export async function createCommunicationConversation(input: CreateConversationI
     .is("archived_at", null)
     .in("profile_id", recipients);
   if (allowed.error || (allowed.data?.length ?? 0) !== recipients.length) throw new Error("Participant non autorise.");
+  if (supervision?.profileIds && !recipients.some((profileId) => supervision.profileIds?.includes(profileId))) {
+    throw new Error("La conversation doit inclure le portail actuellement supervisé.");
+  }
 
   const conversation = await supabase
     .from("communication_conversations" as never)
@@ -288,8 +342,27 @@ export async function createCommunicationConversation(input: CreateConversationI
 }
 
 export async function sendCommunicationMessage(input: { conversation_id: string; body: string }, files: File[]) {
-  const { supabase, user, organizationId } = await getContext();
+  const { supabase, user, organizationId, supervision } = await getContext();
   if (!input.body.trim()) throw new Error("Le message est requis.");
+  const conversation = await supabase
+    .from("communication_conversations" as never)
+    .select("id")
+    .eq("id", input.conversation_id)
+    .eq("organization_id", organizationId)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (conversation.error || !conversation.data) throw new Error("Conversation non autorisée.");
+  if (supervision?.profileIds) {
+    const participant = await supabase
+      .from("communication_participants" as never)
+      .select("profile_id")
+      .eq("conversation_id", input.conversation_id)
+      .eq("organization_id", organizationId)
+      .in("profile_id", supervision.profileIds)
+      .is("archived_at", null)
+      .limit(1);
+    if (participant.error || !participant.data?.length) throw new Error("Conversation hors du contexte supervisé.");
+  }
   const message = await supabase
     .from("communication_messages" as never)
     .insert({
@@ -330,15 +403,16 @@ export async function sendCommunicationMessage(input: { conversation_id: string;
 }
 
 export async function saveCommunicationPreferences(input: Omit<CommunicationPreferences, "id">) {
-  const { supabase, user, organizationId } = await getContext();
-  if (input.profile_id !== user.id || input.organization_id !== organizationId)
+  const { supabase, organizationId, portalProfileId, supervision } = await getContext();
+  if (input.profile_id !== portalProfileId || input.organization_id !== organizationId)
     throw new Error("Preferences non autorisees.");
+  if (supervision?.profileIds) await assertSupervisionProfile(portalProfileId, organizationId);
   const result = await supabase
     .from("communication_preferences" as never)
     .upsert(
       {
         organization_id: organizationId,
-        profile_id: user.id,
+        profile_id: portalProfileId,
         application_enabled: input.application_enabled,
         email_enabled: input.email_enabled,
         telegram_enabled: input.telegram_enabled,

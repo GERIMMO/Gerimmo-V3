@@ -244,6 +244,15 @@ export async function assertSupervisionIntervention(interventionId: string) {
 export async function assertSupervisionProfile(profileId: string, organizationId: string) {
   const scope = await assertSupervisionOrganization(organizationId);
   if (!scope) return null;
+  const { data, error } = await createAdminClient()
+    .from("organization_members")
+    .select("profile_id")
+    .eq("organization_id", organizationId)
+    .eq("profile_id", profileId)
+    .eq("status", "active")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (error || !data) throw new Error("Utilisateur hors de l’organisation supervisée.");
   if (scope.profileIds && !scope.profileIds.includes(profileId)) {
     throw new Error("Utilisateur hors du contexte supervisé.");
   }
