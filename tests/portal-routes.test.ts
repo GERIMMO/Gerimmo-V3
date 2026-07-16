@@ -36,3 +36,14 @@ test("les entrées communication ouvrent le bon onglet réel", async () => {
   assert.match(notifications, /getCommunicationPayload/);
   assert.match(notifications, /initialTab="notifications"/);
 });
+
+test("le layout transmet un type sérialisable et laisse les icônes dans la sidebar cliente", async () => {
+  const layout = await readFile(path.join(root, "src/app/(main)/dashboard/layout.tsx"), "utf8");
+  const sidebar = await readFile(
+    path.join(root, "src/app/(main)/dashboard/_components/sidebar/app-sidebar.tsx"),
+    "utf8",
+  );
+  assert.match(layout, /portalType=\{portalType\}/);
+  assert.doesNotMatch(layout, /items=\{navigationItems\}/);
+  assert.match(sidebar, /getSidebarItemsForPortal\(portalType\)/);
+});

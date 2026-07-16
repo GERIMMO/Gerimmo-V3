@@ -14,7 +14,6 @@ import { requireUser } from "@/lib/auth/guards";
 import { memberTypeToPortalType } from "@/lib/auth/portal-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
-import { getSidebarItemsForPortal, sidebarItems } from "@/navigation/sidebar/sidebar-items";
 import { getPreference } from "@/server/server-actions";
 import { getActiveSupervision } from "@/services/supervision-service";
 
@@ -50,9 +49,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
   const cookieStore = await cookies();
   const supervision = profile?.is_super_admin ? await getActiveSupervision() : null;
   const directPortalType = memberTypeToPortalType(membership?.member_type);
-  let navigationItems = sidebarItems;
-  if (supervision) navigationItems = getSidebarItemsForPortal(supervision.current.type);
-  else if (!profile?.is_super_admin) navigationItems = getSidebarItemsForPortal(directPortalType);
+  const portalType = supervision?.current.type ?? (!profile?.is_super_admin ? directPortalType : null);
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
   const [variant, collapsible] = await Promise.all([
     getPreference("sidebar_variant"),
@@ -68,7 +65,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
         } as React.CSSProperties
       }
     >
-      <AppSidebar user={currentUser} items={navigationItems} variant={variant} collapsible={collapsible} />
+      <AppSidebar user={currentUser} portalType={portalType} variant={variant} collapsible={collapsible} />
       <SidebarInset
         className={cn(
           "[html[data-content-layout=centered]_&>*]:mx-auto",

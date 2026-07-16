@@ -73,9 +73,10 @@ test("les portails supervises reutilisent le dashboard existant", async () => {
 
   assert.match(layout, /getActiveSupervision/);
   assert.match(layout, /SupervisionBanner/);
-  assert.match(layout, /getSidebarItemsForPortal/);
   assert.match(layout, /memberTypeToPortalType/);
-  assert.match(sidebar, /items = sidebarItems/);
+  assert.match(layout, /portalType=\{portalType\}/);
+  assert.match(sidebar, /getSidebarItemsForPortal\(portalType\)/);
+  assert.doesNotMatch(layout, /items=\{navigationItems\}/);
   assert.match(items, /getPortalNavigationIds/);
   assert.match(capabilities, /PORTAIL AGENCE/);
   assert.match(capabilities, /PORTAIL LOCATAIRE/);
@@ -85,15 +86,17 @@ test("les portails supervises reutilisent le dashboard existant", async () => {
 });
 
 test("les portails directs et supervises partagent la meme matrice de capacites", async () => {
-  const [layout, navigation, capabilities, supervision] = await Promise.all([
+  const [layout, sidebar, navigation, capabilities, supervision] = await Promise.all([
     source("src/app/(main)/dashboard/layout.tsx"),
+    source("src/app/(main)/dashboard/_components/sidebar/app-sidebar.tsx"),
     source("src/navigation/sidebar/sidebar-items.ts"),
     source("src/lib/auth/portal-capabilities.ts"),
     source("src/services/supervision-service.ts"),
   ]);
 
-  assert.match(layout, /getSidebarItemsForPortal\(directPortalType\)/);
-  assert.match(layout, /getSidebarItemsForPortal\(supervision\.current\.type\)/);
+  assert.match(layout, /supervision\?\.current\.type/);
+  assert.match(layout, /directPortalType/);
+  assert.match(sidebar, /getSidebarItemsForPortal\(portalType\)/);
   assert.match(navigation, /getPortalNavigationIds/);
   assert.match(supervision, /canEnterPortal\(current\.type, target\.type\)/);
   assert.doesNotMatch(capabilities, /password|signInWith|setSession|access_token/i);
