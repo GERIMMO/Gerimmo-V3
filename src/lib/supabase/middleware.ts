@@ -67,6 +67,8 @@ export async function updateSession(request: NextRequest) {
     !pathname.startsWith("/dashboard/onboarding")
   ) {
     const userId = String(data?.claims?.sub);
+    const profile = await supabase.from("profiles").select("is_super_admin").eq("id", userId).maybeSingle();
+    if (profile.data?.is_super_admin) return response;
     const membership = await supabase
       .from("organization_members")
       .select("organization_id")

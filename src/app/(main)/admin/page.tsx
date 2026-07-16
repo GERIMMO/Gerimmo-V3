@@ -1,6 +1,7 @@
-import { SuperAdminConsole } from "@/app/(main)/dashboard/super-admin/_components/super-admin-console";
-import { getAdminDashboard } from "@/services/administration-service";
+import { AdminCommandCenter } from "@/app/(main)/admin/_components/admin-command-center";
+import { getAdminDashboard, getPilotage } from "@/services/administration-service";
 
 export default async function AdminOverviewPage() {
-  return <SuperAdminConsole initialPayload={await getAdminDashboard()} />;
+  const [dashboard, pilotage] = await Promise.all([getAdminDashboard(), getPilotage()]);
+  return <AdminCommandCenter dashboard={dashboard} pilotage={pilotage} />;
 }

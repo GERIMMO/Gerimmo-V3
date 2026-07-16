@@ -14,7 +14,41 @@ import type {
   VersionDocumentInput,
 } from "@/types/documents";
 
-import { getMirrorOrganizationId } from "./administration-service";
+import { assertSupervisionOrganization, getSupervisionDataScope, recordSupervisionAction } from "./supervision-service";
+
+function isDocumentInSupervision(
+  document: GerimmoDocument,
+  supervision: Awaited<ReturnType<typeof getSupervisionDataScope>>,
+) {
+  if (!supervision) return true;
+  if (document.organization_id !== supervision.organizationId) return false;
+  if (supervision.type === "agency" || (supervision.type === "owner" && supervision.bienIds === null)) return true;
+  if (supervision.type === "property") return document.bien_id === supervision.targetId;
+  if (supervision.type === "tenant") {
+    return (
+      document.tenant_profile_id === supervision.targetId ||
+      (Boolean(document.bien_id && supervision.bienIds?.includes(document.bien_id)) &&
+        document.visibility === "locataire")
+    );
+  }
+  if (supervision.type === "owner") {
+    return (
+      document.owner_profile_id === supervision.targetId ||
+      Boolean(document.bien_id && supervision.bienIds?.includes(document.bien_id))
+    );
+  }
+  if (supervision.type === "contractor") {
+    return document.visibility === "artisan" && document.metadata.artisan_profile_id === supervision.targetId;
+  }
+  return document.owner_profile_id === supervision.targetId || document.tenant_profile_id === supervision.targetId;
+}
+
+async function assertDocumentSupervision(document: GerimmoDocument) {
+  const supervision = await assertSupervisionOrganization(document.organization_id);
+  if (supervision && !isDocumentInSupervision(document, supervision)) {
+    throw new Error("Document hors du contexte supervisé.");
+  }
+}
 
 export async function listDocuments(): Promise<DocumentsPayload> {
   const supabase = await createClient();
@@ -41,34 +75,46 @@ export async function listDocuments(): Promise<DocumentsPayload> {
       throw result.error;
     }
   }
-  const mirrorOrganizationId = await getMirrorOrganizationId();
-  const scopedDocuments = ((documents.data ?? []) as GerimmoDocument[]).filter(
-    (document) => !mirrorOrganizationId || document.organization_id === mirrorOrganizationId,
+  const supervision = await getSupervisionDataScope();
+  const supervisedOrganizationId = supervision?.organizationId ?? null;
+  const scopedDocuments = ((documents.data ?? []) as GerimmoDocument[]).filter((document) =>
+    isDocumentInSupervision(document, supervision),
   );
   const documentIds = new Set(scopedDocuments.map((document) => document.id));
 
   return {
     categories: ((categories.data ?? []) as DocumentCategory[]).filter(
-      (item) => !mirrorOrganizationId || item.organization_id === null || item.organization_id === mirrorOrganizationId,
+      (item) =>
+        !supervisedOrganizationId || item.organization_id === null || item.organization_id === supervisedOrganizationId,
     ),
     templates: (templates.data ?? []) as DocumentTemplate[],
     documents: scopedDocuments,
     versions: ((versions.data ?? []) as DocumentVersion[]).filter(
-      (item) => !mirrorOrganizationId || documentIds.has(item.document_id),
+      (item) => !supervisedOrganizationId || documentIds.has(item.document_id),
     ),
     events: ((events.data ?? []) as DocumentEvent[]).filter(
-      (item) => !mirrorOrganizationId || (item.document_id ? documentIds.has(item.document_id) : false),
+      (item) => !supervisedOrganizationId || (item.document_id ? documentIds.has(item.document_id) : false),
     ),
     alerts: ((alerts.data ?? []) as DocumentAlert[]).filter(
-      (item) => !mirrorOrganizationId || documentIds.has(item.document_id),
+      (item) => !supervisedOrganizationId || documentIds.has(item.document_id),
     ),
     emails: ((emails.data ?? []) as DocumentEmail[]).filter(
-      (item) => !mirrorOrganizationId || documentIds.has(item.document_id),
+      (item) => !supervisedOrganizationId || documentIds.has(item.document_id),
     ),
   };
 }
 
 export async function createDocument(input: CreateDocumentInput) {
+  await assertSupervisionOrganization(input.organization_id);
+  const supervision = await getSupervisionDataScope();
+  if (supervision && supervision.type !== "agency" && !(supervision.type === "owner" && supervision.bienIds === null)) {
+    const candidate = {
+      ...input,
+      id: "nouveau",
+      metadata: input.metadata ?? {},
+    } as GerimmoDocument;
+    if (!isDocumentInSupervision(candidate, supervision)) throw new Error("Document hors du contexte supervisé.");
+  }
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("documents")
@@ -85,11 +131,21 @@ export async function createDocument(input: CreateDocumentInput) {
     throw error;
   }
 
-  return data as GerimmoDocument;
+  const document = data as GerimmoDocument;
+  await recordSupervisionAction("DOCUMENT_CREATED", "document", document.id);
+  return document;
 }
 
 export async function updateDocument({ id, ...input }: UpdateDocumentInput) {
   const supabase = await createClient();
+  const current = await supabase.from("documents").select("*").eq("id", id).single();
+  if (current.error) throw current.error;
+  const currentDocument = current.data as GerimmoDocument;
+  await assertDocumentSupervision(currentDocument);
+  const supervision = await getSupervisionDataScope();
+  if (supervision && !isDocumentInSupervision({ ...currentDocument, ...input }, supervision)) {
+    throw new Error("Modification hors du contexte supervisé.");
+  }
   const { data, error } = await supabase
     .from("documents")
     .update(input as never)
@@ -101,7 +157,9 @@ export async function updateDocument({ id, ...input }: UpdateDocumentInput) {
     throw error;
   }
 
-  return data as GerimmoDocument;
+  const document = data as GerimmoDocument;
+  await recordSupervisionAction("DOCUMENT_UPDATED", "document", document.id);
+  return document;
 }
 
 export async function versionDocument({ id, change_summary, ...input }: VersionDocumentInput) {
@@ -113,6 +171,7 @@ export async function versionDocument({ id, change_summary, ...input }: VersionD
   }
 
   const document = current.data as GerimmoDocument;
+  await assertDocumentSupervision(document);
   const nextVersion = document.current_version + 1;
 
   const version = await supabase
@@ -164,6 +223,9 @@ export async function sendDocument(input: SendDocumentInput) {
   }
 
   const organizationId = (current.data as { organization_id: string }).organization_id;
+  const document = await supabase.from("documents").select("*").eq("id", input.id).single();
+  if (document.error) throw document.error;
+  await assertDocumentSupervision(document.data as GerimmoDocument);
   const { data, error } = await supabase
     .from("document_email_outbox")
     .insert({

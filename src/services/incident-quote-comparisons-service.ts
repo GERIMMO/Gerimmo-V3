@@ -8,6 +8,8 @@ import type {
   IncidentQuoteValidationEvent,
 } from "@/types/incident-quote-comparisons";
 
+import { assertSupervisionQuoteRequest, getSupervisionQuoteRequestIds } from "./supervision-service";
+
 const futureLinks = {
   planification: null,
   intervention: null,
@@ -45,14 +47,25 @@ export async function listQuoteComparisons(): Promise<IncidentQuoteComparisonsPa
     }
   }
 
+  const requestIds = await getSupervisionQuoteRequestIds();
+  const scopedComparisons = ((comparisons.data ?? []) as IncidentQuoteComparison[]).filter(
+    (comparison) => !requestIds || requestIds.includes(comparison.quote_request_id),
+  );
+  const comparisonIds = new Set(scopedComparisons.map((comparison) => comparison.id));
+
   return {
-    comparisons: (comparisons.data ?? []) as IncidentQuoteComparison[],
-    items: (items.data ?? []) as IncidentQuoteComparisonItem[],
-    events: (events.data ?? []) as IncidentQuoteValidationEvent[],
+    comparisons: scopedComparisons,
+    items: ((items.data ?? []) as IncidentQuoteComparisonItem[]).filter(
+      (item) => !requestIds || comparisonIds.has(item.comparison_id),
+    ),
+    events: ((events.data ?? []) as IncidentQuoteValidationEvent[]).filter(
+      (event) => !requestIds || Boolean(event.comparison_id && comparisonIds.has(event.comparison_id)),
+    ),
   };
 }
 
 export async function createQuoteComparison(input: CreateComparisonInput) {
+  await assertSupervisionQuoteRequest(input.quote_request_id);
   const supabase = await createClient();
   const { items, ...comparisonInput } = input;
   const { data, error } = await supabase
@@ -91,6 +104,13 @@ export async function createQuoteComparison(input: CreateComparisonInput) {
 
 export async function recommendQuoteComparison(comparisonId: string) {
   const supabase = await createClient();
+  const comparison = await supabase
+    .from("incident_quote_comparisons")
+    .select("quote_request_id")
+    .eq("id", comparisonId)
+    .single();
+  if (comparison.error) throw comparison.error;
+  await assertSupervisionQuoteRequest((comparison.data as { quote_request_id: string }).quote_request_id);
   const { data, error } = await (
     supabase as never as {
       rpc: (name: string, params: Record<string, string>) => Promise<{ data: string; error: Error | null }>;
@@ -115,6 +135,7 @@ export async function decideQuoteComparison(input: DecideComparisonInput) {
   if (comparison.error) {
     throw comparison.error;
   }
+  await assertSupervisionQuoteRequest((comparison.data as { quote_request_id: string }).quote_request_id);
 
   if (input.decision === "cancel") {
     const { data, error } = await supabase

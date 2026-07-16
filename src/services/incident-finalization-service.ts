@@ -17,6 +17,12 @@ import type {
   UpdateReportInput,
 } from "@/types/incident-finalization";
 
+import {
+  assertSupervisionIncident,
+  assertSupervisionIntervention,
+  getSupervisionIncidentIds,
+} from "./supervision-service";
+
 const interventionFutureLinks = { rapport: null, bot: null, notifications: null };
 
 export async function listIncidentFinalization(): Promise<IncidentFinalizationPayload> {
@@ -52,19 +58,38 @@ export async function listIncidentFinalization(): Promise<IncidentFinalizationPa
     }
   }
 
+  const incidentIds = await getSupervisionIncidentIds();
+  const scopedInterventions = ((interventions.data ?? []) as IncidentIntervention[]).filter(
+    (intervention) => !incidentIds || incidentIds.includes(intervention.incident_id),
+  );
+  const interventionIds = new Set(scopedInterventions.map((intervention) => intervention.id));
+
   return {
-    interventions: (interventions.data ?? []) as IncidentIntervention[],
-    materials: (materials.data ?? []) as InterventionMaterial[],
-    interventionEvents: (interventionEvents.data ?? []) as InterventionEvent[],
-    reports: (reports.data ?? []) as InterventionReport[],
-    reportEvents: (reportEvents.data ?? []) as InterventionReportEvent[],
-    closures: (closures.data ?? []) as IncidentClosureReview[],
-    evaluations: (evaluations.data ?? []) as ArtisanEvaluation[],
+    interventions: scopedInterventions,
+    materials: ((materials.data ?? []) as InterventionMaterial[]).filter(
+      (material) => !incidentIds || interventionIds.has(material.intervention_id),
+    ),
+    interventionEvents: ((interventionEvents.data ?? []) as InterventionEvent[]).filter(
+      (event) => !incidentIds || Boolean(event.intervention_id && interventionIds.has(event.intervention_id)),
+    ),
+    reports: ((reports.data ?? []) as InterventionReport[]).filter(
+      (report) => !incidentIds || interventionIds.has(report.intervention_id),
+    ),
+    reportEvents: ((reportEvents.data ?? []) as InterventionReportEvent[]).filter(
+      (event) => !incidentIds || Boolean(event.intervention_id && interventionIds.has(event.intervention_id)),
+    ),
+    closures: ((closures.data ?? []) as IncidentClosureReview[]).filter(
+      (closure) => !incidentIds || incidentIds.includes(closure.incident_id),
+    ),
+    evaluations: ((evaluations.data ?? []) as ArtisanEvaluation[]).filter(
+      (evaluation) => !incidentIds || interventionIds.has(evaluation.intervention_id),
+    ),
     ratingStatistics: (ratingStatistics.data ?? []) as ArtisanRatingStatistic[],
   };
 }
 
 export async function createIntervention(input: CreateInterventionInput) {
+  await assertSupervisionIncident(input.incident_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_interventions")
@@ -88,6 +113,7 @@ export async function createIntervention(input: CreateInterventionInput) {
 }
 
 export async function updateIntervention({ id, ...input }: UpdateInterventionInput) {
+  await assertSupervisionIntervention(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_interventions")
@@ -132,6 +158,7 @@ export async function completeIntervention(input: UpdateInterventionInput) {
 }
 
 export async function addInterventionMaterial(input: Omit<InterventionMaterial, "id" | "created_at" | "archived_at">) {
+  await assertSupervisionIntervention(input.intervention_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_intervention_materials")
@@ -147,6 +174,7 @@ export async function addInterventionMaterial(input: Omit<InterventionMaterial, 
 }
 
 export async function createInterventionReport(input: CreateReportInput) {
+  await assertSupervisionIntervention(input.intervention_id);
   const supabase = await createClient();
   const interventionResult = await supabase
     .from("incident_interventions")
@@ -234,6 +262,13 @@ export async function createInterventionReport(input: CreateReportInput) {
 
 export async function updateInterventionReport({ id, action, ...input }: UpdateReportInput) {
   const supabase = await createClient();
+  const currentReport = await supabase
+    .from("incident_intervention_reports")
+    .select("intervention_id")
+    .eq("id", id)
+    .single();
+  if (currentReport.error) throw currentReport.error;
+  await assertSupervisionIntervention((currentReport.data as { intervention_id: string }).intervention_id);
   const patch: Record<string, unknown> = { ...input };
 
   if (action === "preview") {
@@ -279,6 +314,8 @@ export async function updateInterventionReport({ id, action, ...input }: UpdateR
 }
 
 export async function createIncidentClosure(input: CreateClosureInput) {
+  await assertSupervisionIncident(input.incident_id);
+  await assertSupervisionIntervention(input.intervention_id);
   const supabase = await createClient();
   const statusMap = {
     validation: "valide",
@@ -305,6 +342,8 @@ export async function createIncidentClosure(input: CreateClosureInput) {
 }
 
 export async function createArtisanEvaluation(input: CreateEvaluationInput) {
+  await assertSupervisionIncident(input.incident_id);
+  await assertSupervisionIntervention(input.intervention_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_artisan_evaluations")

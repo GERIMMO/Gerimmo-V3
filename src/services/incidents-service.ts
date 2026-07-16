@@ -1,3 +1,4 @@
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
   CreateIncidentInput,
@@ -8,7 +9,7 @@ import type {
   UpdateIncidentInput,
 } from "@/types/incidents";
 
-import { getMirrorOrganizationId } from "./administration-service";
+import { assertSupervisionBien, getSupervisionDataScope, recordSupervisionAction } from "./supervision-service";
 
 const futureLinks = {
   devis: [],
@@ -34,10 +35,15 @@ export async function listIncidents(): Promise<IncidentsPayload> {
       throw result.error;
     }
   }
-  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const supervision = await getSupervisionDataScope();
+  const supervisedOrganizationId = supervision?.organizationId ?? null;
   const visibleIncidents = (incidents.data ?? []) as GerimmoIncident[];
-  const scopedIncidents = mirrorOrganizationId
-    ? visibleIncidents.filter((incident) => incident.organization_id === mirrorOrganizationId)
+  const scopedIncidents = supervisedOrganizationId
+    ? visibleIncidents.filter(
+        (incident) =>
+          incident.organization_id === supervisedOrganizationId &&
+          (!supervision?.bienIds || supervision.bienIds.includes(incident.bien_id)),
+      )
     : visibleIncidents;
   const incidentIds = new Set(scopedIncidents.map((incident) => incident.id));
 
@@ -45,12 +51,13 @@ export async function listIncidents(): Promise<IncidentsPayload> {
     categories: (categories.data ?? []) as IncidentCategory[],
     incidents: scopedIncidents,
     events: ((events.data ?? []) as IncidentEvent[]).filter(
-      (event) => !mirrorOrganizationId || (event.incident_id ? incidentIds.has(event.incident_id) : false),
+      (event) => !supervisedOrganizationId || (event.incident_id ? incidentIds.has(event.incident_id) : false),
     ),
   };
 }
 
 export async function createIncident(input: CreateIncidentInput) {
+  await assertSupervisionBien(input.bien_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incidents")
@@ -69,10 +76,20 @@ export async function createIncident(input: CreateIncidentInput) {
     throw error;
   }
 
-  return data as GerimmoIncident;
+  const incident = data as GerimmoIncident;
+  await recordSupervisionAction("INCIDENT_CREATED", "incident", incident.id);
+  return incident;
 }
 
 export async function updateIncident({ id, ...input }: UpdateIncidentInput) {
+  const admin = createAdminClient();
+  const { data: current, error: currentError } = await admin
+    .from("incidents")
+    .select("bien_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (currentError || !current) throw currentError ?? new Error("Incident introuvable.");
+  await assertSupervisionBien(input.bien_id ?? current.bien_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incidents")
@@ -85,7 +102,9 @@ export async function updateIncident({ id, ...input }: UpdateIncidentInput) {
     throw error;
   }
 
-  return data as GerimmoIncident;
+  const incident = data as GerimmoIncident;
+  await recordSupervisionAction("INCIDENT_UPDATED", "incident", incident.id);
+  return incident;
 }
 
 export async function archiveIncident(id: string) {

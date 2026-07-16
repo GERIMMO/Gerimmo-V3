@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
-import { Archive, Eye, Import, Power, RotateCcw, Search } from "lucide-react";
+import { Archive, Eye, Import, Power, RotateCcw, Search, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -66,14 +66,18 @@ export function SuperAdminConsole({
     await reload();
   }
 
-  async function mirror() {
-    if (!selected) return;
-    const response = await fetch("/api/admin/mirror", {
+  async function supervise(organization: AdminOrganization) {
+    const response = await fetch("/api/admin/supervision", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ organizationId: selected.id, reason: "Assistance et contrôle Super Admin" }),
+      body: JSON.stringify({
+        action: "start",
+        type: organization.organization_type === "independent_owner" ? "owner" : "agency",
+        targetId: organization.id,
+        reason: "Assistance et contrôle Super Admin",
+      }),
     });
-    if (!response.ok) return toast.error("Vue miroir impossible.");
+    if (!response.ok) return toast.error("Supervision impossible.");
     router.push("/dashboard/accueil");
     router.refresh();
   }
@@ -128,18 +132,28 @@ export function SuperAdminConsole({
                     <TableHead>Utilisateurs</TableHead>
                     <TableHead>Incidents</TableHead>
                     <TableHead>Statut</TableHead>
+                    <TableHead className="w-20 text-right">Gestion</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((organization) => (
-                    <TableRow
-                      key={organization.id}
-                      className="cursor-pointer"
-                      onClick={() => setSelected(organization)}
-                    >
+                    <TableRow key={organization.id} className="cursor-pointer" onClick={() => supervise(organization)}>
                       <TableCell>
                         <div className="font-medium">{organization.name}</div>
                         <div className="text-muted-foreground text-xs">{organization.slug}</div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Gérer ${organization.name}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelected(organization);
+                          }}
+                        >
+                          <Settings2 />
+                        </Button>
                       </TableCell>
                       <TableCell>{typeLabels[organization.organization_type]}</TableCell>
                       <TableCell>{organization.properties_count}</TableCell>
@@ -193,9 +207,9 @@ export function SuperAdminConsole({
                 </SheetDescription>
               </SheetHeader>
               <div className="flex flex-col gap-2 px-4">
-                <Button onClick={mirror}>
+                <Button onClick={() => supervise(selected)}>
                   <Eye data-icon="inline-start" />
-                  Ouvrir la vue miroir
+                  Entrer en mode supervision
                 </Button>
                 {selected.status === "active" ? (
                   <Button variant="outline" onClick={() => status("disable")}>

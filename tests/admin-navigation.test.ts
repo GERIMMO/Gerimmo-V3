@@ -11,16 +11,8 @@ async function source(relativePath: string) {
 
 test("la navigation Super Admin est centralisee et complete", async () => {
   const navigation = await source("src/navigation/admin/admin-navigation.ts");
-  const groups = [
-    "Pilotage",
-    "Réseau GERIMMO",
-    "Gestion opérationnelle",
-    "Business",
-    "Qualité et support",
-    "Système",
-    "Configuration",
-  ];
-  const priorityEntries = ["Vue d’ensemble", "À traiter", "Agences", "Incidents", "Bugs signalés"];
+  const groups = ["Centre de commandement", "Réseau GERIMMO", "Business", "Support", "Système"];
+  const priorityEntries = ["Vue d’ensemble", "À traiter", "Supervision temps réel", "Agences", "Bugs"];
 
   for (const group of groups) assert.match(navigation, new RegExp(`title: "${group}"`));
   for (const entry of priorityEntries) assert.match(navigation, new RegExp(`title: "${entry}"`));
@@ -31,6 +23,60 @@ test("la navigation Super Admin est centralisee et complete", async () => {
   const routes = [...routeBlock.matchAll(/"(\/admin[^"]*)"/g)].map((match) => match[1]);
   assert.equal(routes.length, 36);
   assert.equal(new Set(routes).size, routes.length);
+});
+
+test("le mode supervision conserve l'identite et le JWT du Super Admin", async () => {
+  const [service, route, banner, migration] = await Promise.all([
+    source("src/services/supervision-service.ts"),
+    source("src/app/api/admin/supervision/route.ts"),
+    source("src/app/(main)/dashboard/_components/supervision-banner.tsx"),
+    source("supabase/migrations/20260716150000_admin_supervision_center.sql"),
+  ]);
+
+  assert.match(route, /requireSuperAdminApi\(\)/);
+  assert.match(service, /superAdminProfileId/);
+  assert.match(service, /actor_profile_id: active\.superAdminProfileId/);
+  assert.match(service, /httpOnly: true/);
+  assert.doesNotMatch(`${service}\n${route}`, /signInWith|generateLink|setSession|refreshSession|access_token|jwt/i);
+  assert.match(banner, /Mode supervision/i);
+  assert.match(banner, /Toutes les actions sont journalisées/);
+  assert.match(migration, /admin_supervision_events/);
+  assert.match(migration, /public\.is_super_admin\(\)/);
+});
+
+test("les contextes imbriques sont controles sur le serveur", async () => {
+  const [service, patrimoine, incidents, documents, users] = await Promise.all([
+    source("src/services/supervision-service.ts"),
+    source("src/services/patrimoine-service.ts"),
+    source("src/services/incidents-service.ts"),
+    source("src/services/documents-service.ts"),
+    source("src/services/utilisateurs-service.ts"),
+  ]);
+
+  assert.match(service, /Un propriétaire ne peut ouvrir que ses biens/);
+  assert.match(service, /Ce locataire n’occupe pas le bien supervisé/);
+  assert.match(service, /assertSupervisionBien/);
+  assert.match(service, /assertSupervisionProfile/);
+  assert.match(patrimoine, /getSupervisionDataScope/);
+  assert.match(incidents, /supervision\.bienIds\.includes\(incident\.bien_id\)/);
+  assert.match(documents, /isDocumentInSupervision/);
+  assert.match(users, /supervision\.profileIds\.includes\(member\.profile_id\)/);
+});
+
+test("les portails supervises reutilisent le dashboard existant", async () => {
+  const [layout, sidebar, items] = await Promise.all([
+    source("src/app/(main)/dashboard/layout.tsx"),
+    source("src/app/(main)/dashboard/_components/sidebar/app-sidebar.tsx"),
+    source("src/navigation/sidebar/sidebar-items.ts"),
+  ]);
+
+  assert.match(layout, /getActiveSupervision/);
+  assert.match(layout, /SupervisionBanner/);
+  assert.match(layout, /getSidebarItemsForSupervision/);
+  assert.match(sidebar, /items = sidebarItems/);
+  assert.match(items, /PORTAIL AGENCE/);
+  assert.match(items, /PORTAIL LOCATAIRE/);
+  assert.match(items, /PORTAIL ARTISAN/);
 });
 
 test("les routes admin sont protegees sur le serveur et dans le middleware", async () => {

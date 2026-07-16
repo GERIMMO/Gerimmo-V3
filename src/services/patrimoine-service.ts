@@ -13,7 +13,14 @@ import type {
   UpdateBienInput,
 } from "@/types/patrimoine";
 
-import { getMirrorOrganizationId } from "./administration-service";
+import {
+  assertSupervisionBien,
+  assertSupervisionManager,
+  assertSupervisionOrganization,
+  assertSupervisionPortal,
+  getSupervisionDataScope,
+  recordSupervisionAction,
+} from "./supervision-service";
 
 export async function listPatrimoine(): Promise<PatrimoinePayload> {
   const supabase = await createClient();
@@ -42,33 +49,39 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
       throw result.error;
     }
   }
-  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const supervision = await getSupervisionDataScope();
+  const supervisedOrganizationId = supervision?.organizationId ?? null;
   const scopedBiens = ((biens.data ?? []) as Bien[]).filter(
-    (bien) => !mirrorOrganizationId || bien.organization_id === mirrorOrganizationId,
+    (bien) =>
+      !supervisedOrganizationId ||
+      (bien.organization_id === supervisedOrganizationId &&
+        (!supervision?.bienIds || supervision.bienIds.includes(bien.id))),
   );
   const bienIds = new Set(scopedBiens.map((bien) => bien.id));
 
   return {
     patrimoines: ((patrimoines.data ?? []) as Patrimoine[]).filter(
-      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+      (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,
     ),
     residences: ((residences.data ?? []) as Residence[]).filter(
-      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+      (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,
     ),
     biens: scopedBiens,
     occupants: ((occupants.data ?? []) as BienOccupant[]).filter(
-      (item) => !mirrorOrganizationId || bienIds.has(item.bien_id),
+      (item) => !supervisedOrganizationId || bienIds.has(item.bien_id),
     ),
     echeances: ((echeances.data ?? []) as BienEcheance[]).filter(
-      (item) => !mirrorOrganizationId || bienIds.has(item.bien_id),
+      (item) => !supervisedOrganizationId || bienIds.has(item.bien_id),
     ),
     historique: ((historique.data ?? []) as BienHistorique[]).filter(
-      (item) => !mirrorOrganizationId || (item.bien_id ? bienIds.has(item.bien_id) : false),
+      (item) => !supervisedOrganizationId || (item.bien_id ? bienIds.has(item.bien_id) : false),
     ),
   };
 }
 
 export async function createPatrimoine(input: CreatePatrimoineInput) {
+  await assertSupervisionManager();
+  await assertSupervisionOrganization(input.organization_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("patrimoines")
@@ -80,10 +93,14 @@ export async function createPatrimoine(input: CreatePatrimoineInput) {
     throw error;
   }
 
-  return data as Patrimoine;
+  const patrimoine = data as Patrimoine;
+  await recordSupervisionAction("PATRIMOINE_CREATED", "patrimoine", patrimoine.id);
+  return patrimoine;
 }
 
 export async function createResidence(input: CreateResidenceInput) {
+  await assertSupervisionManager();
+  await assertSupervisionOrganization(input.organization_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("residences")
@@ -95,10 +112,14 @@ export async function createResidence(input: CreateResidenceInput) {
     throw error;
   }
 
-  return data as Residence;
+  const residence = data as Residence;
+  await recordSupervisionAction("RESIDENCE_CREATED", "residence", residence.id);
+  return residence;
 }
 
 export async function createBien(input: CreateBienInput) {
+  await assertSupervisionManager();
+  await assertSupervisionOrganization(input.organization_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("biens")
@@ -110,10 +131,14 @@ export async function createBien(input: CreateBienInput) {
     throw error;
   }
 
-  return data as Bien;
+  const bien = data as Bien;
+  await recordSupervisionAction("PROPERTY_CREATED", "property", bien.id);
+  return bien;
 }
 
 export async function updateBien({ id, ...input }: UpdateBienInput) {
+  await assertSupervisionPortal(["agency", "owner", "property"]);
+  await assertSupervisionBien(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("biens")
@@ -126,10 +151,14 @@ export async function updateBien({ id, ...input }: UpdateBienInput) {
     throw error;
   }
 
-  return data as Bien;
+  const bien = data as Bien;
+  await recordSupervisionAction("PROPERTY_UPDATED", "property", bien.id);
+  return bien;
 }
 
 export async function archiveBien(id: string) {
+  await assertSupervisionPortal(["agency", "owner", "property"]);
+  await assertSupervisionBien(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("biens")
@@ -142,5 +171,7 @@ export async function archiveBien(id: string) {
     throw error;
   }
 
-  return data as Bien;
+  const bien = data as Bien;
+  await recordSupervisionAction("PROPERTY_ARCHIVED", "property", bien.id);
+  return bien;
 }

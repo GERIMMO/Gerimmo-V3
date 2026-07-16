@@ -11,6 +11,8 @@ import type {
   ScheduleDecisionInput,
 } from "@/types/incident-scheduling";
 
+import { assertSupervisionIncident, assertSupervisionSchedule, getSupervisionIncidentIds } from "./supervision-service";
+
 const futureLinks = {
   intervention: null,
   bot: null,
@@ -33,16 +35,31 @@ export async function listIncidentScheduling(): Promise<IncidentSchedulingPayloa
     }
   }
 
+  const incidentIds = await getSupervisionIncidentIds();
+  const scopedRequests = ((requests.data ?? []) as IncidentScheduleRequest[]).filter(
+    (request) => !incidentIds || incidentIds.includes(request.incident_id),
+  );
+  const requestIds = new Set(scopedRequests.map((request) => request.id));
+
   return {
-    requests: (requests.data ?? []) as IncidentScheduleRequest[],
-    batches: (batches.data ?? []) as IncidentScheduleSlotBatch[],
-    slots: (slots.data ?? []) as IncidentScheduleSlot[],
-    responses: (responses.data ?? []) as IncidentScheduleResponse[],
-    events: (events.data ?? []) as IncidentScheduleEvent[],
+    requests: scopedRequests,
+    batches: ((batches.data ?? []) as IncidentScheduleSlotBatch[]).filter(
+      (batch) => !incidentIds || requestIds.has(batch.schedule_request_id),
+    ),
+    slots: ((slots.data ?? []) as IncidentScheduleSlot[]).filter(
+      (slot) => !incidentIds || requestIds.has(slot.schedule_request_id),
+    ),
+    responses: ((responses.data ?? []) as IncidentScheduleResponse[]).filter(
+      (response) => !incidentIds || requestIds.has(response.schedule_request_id),
+    ),
+    events: ((events.data ?? []) as IncidentScheduleEvent[]).filter(
+      (event) => !incidentIds || Boolean(event.schedule_request_id && requestIds.has(event.schedule_request_id)),
+    ),
   };
 }
 
 export async function createScheduleRequest(input: CreateScheduleRequestInput) {
+  await assertSupervisionIncident(input.incident_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_schedule_requests")
@@ -66,6 +83,7 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
   if (input.slots.length < 3) {
     throw new Error("L artisan doit proposer au moins 3 creneaux.");
   }
+  await assertSupervisionSchedule(input.schedule_request_id);
 
   const supabase = await createClient();
   const schedule = await supabase
@@ -138,6 +156,7 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
 }
 
 export async function decideSchedule(input: ScheduleDecisionInput) {
+  await assertSupervisionSchedule(input.schedule_request_id);
   const supabase = await createClient();
   const scheduleResult = await supabase
     .from("incident_schedule_requests")

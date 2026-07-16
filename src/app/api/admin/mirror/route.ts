@@ -1,5 +1,5 @@
 import { requireSuperAdminApi } from "@/lib/auth/api-guards";
-import { startMirrorSession, stopMirrorSession } from "@/services/administration-service";
+import { startSupervision, stopSupervision } from "@/services/supervision-service";
 
 export async function POST(request: Request) {
   const authorization = await requireSuperAdminApi();
@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     if (!body.organizationId || !body.reason || body.reason.trim().length < 5) {
       return Response.json({ message: "Une raison de consultation est obligatoire." }, { status: 400 });
     }
-    return Response.json(await startMirrorSession(body.organizationId, body.reason));
+    return Response.json(await startSupervision("agency", body.organizationId, body.reason));
   } catch (error) {
     return Response.json(
       { message: error instanceof Error ? error.message : "Vue miroir impossible." },
@@ -21,6 +21,6 @@ export async function POST(request: Request) {
 export async function DELETE() {
   const authorization = await requireSuperAdminApi();
   if (!authorization.authorized) return authorization.response;
-  await stopMirrorSession();
+  await stopSupervision();
   return Response.json({ success: true });
 }

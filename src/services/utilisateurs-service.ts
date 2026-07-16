@@ -2,7 +2,14 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { InviteUserInput, UpdateUserInput, UsersPayload } from "@/types/utilisateurs";
 
-import { getMirrorOrganizationId } from "./administration-service";
+import {
+  assertSupervisionManager,
+  assertSupervisionOrganization,
+  assertSupervisionPortal,
+  assertSupervisionProfile,
+  getSupervisionDataScope,
+  recordSupervisionAction,
+} from "./supervision-service";
 import { createHash, randomBytes } from "node:crypto";
 
 type MemberRecord = {
@@ -54,9 +61,15 @@ export async function listUsers(): Promise<UsersPayload> {
     }
   }
 
-  const mirrorOrganizationId = await getMirrorOrganizationId();
+  const supervision = await getSupervisionDataScope();
+  const supervisedOrganizationId = supervision?.organizationId ?? null;
   const users = ((members.data ?? []) as MemberRecord[])
-    .filter((member) => !mirrorOrganizationId || member.organization_id === mirrorOrganizationId)
+    .filter(
+      (member) =>
+        !supervisedOrganizationId ||
+        (member.organization_id === supervisedOrganizationId &&
+          (!supervision?.profileIds || supervision.profileIds.includes(member.profile_id))),
+    )
     .map((member) => {
       const role = member.member_role_assignments?.[0]?.roles;
       const details = member.user_profile_details?.[0];
@@ -83,18 +96,20 @@ export async function listUsers(): Promise<UsersPayload> {
   return {
     users,
     invitations: ((invitations.data ?? []) as UsersPayload["invitations"]).filter(
-      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+      (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,
     ),
     activities: ((activities.data ?? []) as UsersPayload["activities"]).filter(
-      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+      (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,
     ),
     statusHistory: ((statusHistory.data ?? []) as UsersPayload["statusHistory"]).filter(
-      (item) => !mirrorOrganizationId || item.organization_id === mirrorOrganizationId,
+      (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,
     ),
   } as UsersPayload;
 }
 
 export async function inviteUser(input: InviteUserInput) {
+  await assertSupervisionManager();
+  await assertSupervisionOrganization(input.organization_id);
   const supabase = await createClient();
   const token = randomBytes(32).toString("base64url");
   const { data, error } = await supabase
@@ -123,10 +138,14 @@ export async function inviteUser(input: InviteUserInput) {
       .eq("id", (data as { id: string }).id);
     throw authInvitation.error;
   }
+  await recordSupervisionAction("USER_INVITED", "invitation", String((data as { id: string }).id), {
+    organization_id: input.organization_id,
+  });
   return { invitation: data };
 }
 
 export async function updateUser(input: UpdateUserInput) {
+  await assertSupervisionProfile(input.profile_id, input.organization_id);
   const supabase = await createClient();
 
   if (input.full_name !== undefined || input.phone !== undefined) {
@@ -162,5 +181,8 @@ export async function updateUser(input: UpdateUserInput) {
     if (error) throw error;
   }
 
+  await recordSupervisionAction("USER_UPDATED", "profile", input.profile_id, {
+    organization_id: input.organization_id,
+  });
   return listUsers();
 }

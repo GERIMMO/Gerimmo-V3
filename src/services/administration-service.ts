@@ -1,5 +1,3 @@
-import { cookies } from "next/headers";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type {
@@ -73,17 +71,17 @@ export async function getAdminDashboard(): Promise<AdminDashboardPayload> {
       {
         label: "Agences",
         value: mapped.filter((item) => item.organization_type === "agency").length,
-        href: "/dashboard/super-admin",
+        href: "/admin/agencies",
       },
       {
         label: "Propriétaires indépendants",
         value: mapped.filter((item) => item.organization_type === "independent_owner").length,
-        href: "/dashboard/super-admin",
+        href: "/admin/owners",
       },
-      { label: "Biens", value: properties.data?.length ?? 0, href: "/dashboard/biens" },
-      { label: "Utilisateurs", value: members.data?.length ?? 0, href: "/dashboard/utilisateurs" },
-      { label: "Incidents", value: incidents.data?.length ?? 0, href: "/dashboard/incidents" },
-      { label: "Documents", value: documents.data?.length ?? 0, href: "/dashboard/documents" },
+      { label: "Biens", value: properties.data?.length ?? 0, href: "/admin/properties" },
+      { label: "Utilisateurs", value: members.data?.length ?? 0, href: "/admin/users" },
+      { label: "Incidents", value: incidents.data?.length ?? 0, href: "/admin/incidents" },
+      { label: "Documents", value: documents.data?.length ?? 0, href: "/admin/documents" },
     ],
     organizations: mapped,
     logs: (logs.data ?? []) as AdminLog[],
@@ -113,58 +111,6 @@ export async function updateOrganizationStatus(organizationId: string, action: "
     new_values: values,
   });
   return data;
-}
-
-export async function startMirrorSession(organizationId: string, reason: string) {
-  const { user } = await requireSuperAdmin();
-  const admin = createAdminClient();
-  await admin
-    .from("admin_impersonation_sessions")
-    .update({ ended_at: new Date().toISOString() })
-    .eq("super_admin_profile_id", user.id)
-    .is("ended_at", null);
-  const { data, error } = await admin
-    .from("admin_impersonation_sessions")
-    .insert({ super_admin_profile_id: user.id, organization_id: organizationId, reason })
-    .select("id")
-    .single();
-  if (error) throw error;
-  const store = await cookies();
-  store.set("gerimmo_mirror_org", organizationId, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 3600,
-  });
-  store.set("gerimmo_mirror_session", data.id, {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: 3600,
-  });
-  return data;
-}
-
-export async function stopMirrorSession() {
-  const { user } = await requireSuperAdmin();
-  const store = await cookies();
-  const sessionId = store.get("gerimmo_mirror_session")?.value;
-  if (sessionId) {
-    await createAdminClient()
-      .from("admin_impersonation_sessions")
-      .update({ ended_at: new Date().toISOString() })
-      .eq("id", sessionId)
-      .eq("super_admin_profile_id", user.id);
-  }
-  store.delete("gerimmo_mirror_org");
-  store.delete("gerimmo_mirror_session");
-}
-
-export async function getMirrorOrganizationId() {
-  const store = await cookies();
-  return store.get("gerimmo_mirror_org")?.value ?? null;
 }
 
 export async function refreshRecommendations(organizationId?: string | null) {

@@ -10,6 +10,12 @@ import type {
   UpdateQuoteRequestInput,
 } from "@/types/incident-quotes";
 
+import {
+  assertSupervisionIncident,
+  assertSupervisionQuoteRequest,
+  getSupervisionIncidentIds,
+} from "./supervision-service";
+
 const futureLinks = {
   validation: null,
   planification: null,
@@ -31,15 +37,28 @@ export async function listIncidentQuotes(): Promise<IncidentQuotesPayload> {
     }
   }
 
+  const incidentIds = await getSupervisionIncidentIds();
+  const scopedRequests = ((requests.data ?? []) as IncidentQuoteRequest[]).filter(
+    (request) => !incidentIds || incidentIds.includes(request.incident_id),
+  );
+  const requestIds = new Set(scopedRequests.map((request) => request.id));
+
   return {
-    requests: (requests.data ?? []) as IncidentQuoteRequest[],
-    recipients: (recipients.data ?? []) as IncidentQuoteRecipient[],
-    quotes: (quotes.data ?? []) as IncidentQuote[],
-    events: (events.data ?? []) as IncidentQuoteEvent[],
+    requests: scopedRequests,
+    recipients: ((recipients.data ?? []) as IncidentQuoteRecipient[]).filter(
+      (recipient) => !incidentIds || requestIds.has(recipient.quote_request_id),
+    ),
+    quotes: ((quotes.data ?? []) as IncidentQuote[]).filter(
+      (quote) => !incidentIds || requestIds.has(quote.quote_request_id),
+    ),
+    events: ((events.data ?? []) as IncidentQuoteEvent[]).filter(
+      (event) => !incidentIds || Boolean(event.quote_request_id && requestIds.has(event.quote_request_id)),
+    ),
   };
 }
 
 export async function createQuoteRequest(input: CreateQuoteRequestInput) {
+  await assertSupervisionIncident(input.incident_id);
   const supabase = await createClient();
   const { recipients = [], ...requestInput } = input;
   const { data, error } = await supabase
@@ -78,6 +97,7 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput) {
 }
 
 export async function updateQuoteRequest({ id, ...input }: UpdateQuoteRequestInput) {
+  await assertSupervisionQuoteRequest(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_quote_requests")
@@ -102,6 +122,7 @@ export async function archiveQuoteRequest(id: string) {
 }
 
 export async function receiveQuote(input: ReceiveQuoteInput) {
+  await assertSupervisionQuoteRequest(input.quote_request_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_quotes")
@@ -133,6 +154,7 @@ export async function selectQuote(id: string) {
   }
 
   const quote = current.data as Pick<IncidentQuote, "id" | "organization_id" | "quote_request_id" | "recipient_id">;
+  await assertSupervisionQuoteRequest(quote.quote_request_id);
   await supabase
     .from("incident_quotes")
     .update({ status: "recu" } as never)
