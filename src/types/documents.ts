@@ -123,7 +123,21 @@ export type DocumentEmail = {
   created_at: string;
 };
 
+export type DocumentOwnerOption = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
+export type DocumentPropertyOption = {
+  id: string;
+  name: string;
+  reference: string;
+  owner_profile_ids: string[];
+};
+
 export type DocumentsPayload = {
+  organizationId: string | null;
   categories: DocumentCategory[];
   templates: DocumentTemplate[];
   documents: GerimmoDocument[];
@@ -131,6 +145,8 @@ export type DocumentsPayload = {
   events: DocumentEvent[];
   alerts: DocumentAlert[];
   emails: DocumentEmail[];
+  owners: DocumentOwnerOption[];
+  properties: DocumentPropertyOption[];
 };
 
 export type CreateDocumentInput = Pick<GerimmoDocument, "organization_id" | "title" | "reference"> &
