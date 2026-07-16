@@ -19,15 +19,33 @@ import type { AdminDashboardPayload, AdminOrganization } from "@/types/administr
 
 const typeLabels = { agency: "Agence", independent_owner: "Propriétaire indépendant", internal: "Interne" };
 
-export function SuperAdminConsole({ initialPayload }: { initialPayload: AdminDashboardPayload }) {
+interface SuperAdminConsoleProps {
+  readonly initialPayload: AdminDashboardPayload;
+  readonly organizationType?: AdminOrganization["organization_type"];
+  readonly title?: string;
+  readonly description?: string;
+  readonly defaultTab?: "organisations" | "journal";
+}
+
+export function SuperAdminConsole({
+  initialPayload,
+  organizationType,
+  title = "Administration nationale",
+  description = "Organisations, activité et contrôles GERIMMO.",
+  defaultTab = "organisations",
+}: SuperAdminConsoleProps) {
   const router = useRouter();
   const [payload, setPayload] = useState(initialPayload);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<AdminOrganization | null>(null);
   const filtered = useMemo(
     () =>
-      payload.organizations.filter((item) => `${item.name} ${item.slug}`.toLowerCase().includes(query.toLowerCase())),
-    [payload.organizations, query],
+      payload.organizations.filter(
+        (item) =>
+          (!organizationType || item.organization_type === organizationType) &&
+          `${item.name} ${item.slug}`.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [organizationType, payload.organizations, query],
   );
 
   async function reload() {
@@ -64,11 +82,11 @@ export function SuperAdminConsole({ initialPayload }: { initialPayload: AdminDas
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-semibold text-2xl">Administration nationale</h1>
-          <p className="text-muted-foreground text-sm">Organisations, activité et contrôles GERIMMO.</p>
+          <h1 className="font-semibold text-2xl">{title}</h1>
+          <p className="text-muted-foreground text-sm">{description}</p>
         </div>
         <Button asChild size="sm">
-          <Link href="/dashboard/super-admin/imports">
+          <Link href="/admin/imports">
             <Import data-icon="inline-start" />
             Importer
           </Link>
@@ -84,7 +102,7 @@ export function SuperAdminConsole({ initialPayload }: { initialPayload: AdminDas
           </Card>
         ))}
       </div>
-      <Tabs defaultValue="organisations">
+      <Tabs defaultValue={defaultTab}>
         <TabsList>
           <TabsTrigger value="organisations">Organisations</TabsTrigger>
           <TabsTrigger value="journal">Journal</TabsTrigger>

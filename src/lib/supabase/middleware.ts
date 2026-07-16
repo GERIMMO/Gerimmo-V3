@@ -52,7 +52,9 @@ export async function updateSession(request: NextRequest) {
   const isAuthenticated = Boolean(data?.claims?.sub);
   const pathname = request.nextUrl.pathname;
 
-  if (!isAuthenticated && pathname.startsWith("/dashboard")) {
+  const isProtectedApplicationPath = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
+
+  if (!isAuthenticated && isProtectedApplicationPath) {
     const loginUrl = new URL("/auth/v2/login", request.url);
     loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(loginUrl);

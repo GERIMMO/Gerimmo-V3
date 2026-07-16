@@ -26,10 +26,16 @@ const emptyForm = {
 type ArticleForm = Partial<CmsArticle> &
   Pick<CmsArticle, "title" | "summary" | "content" | "article_type" | "audience" | "status">;
 
-export function ArticlesConsole({ initialArticles }: { initialArticles: CmsArticle[] }) {
+export function ArticlesConsole({
+  initialArticles,
+  createOnMount = false,
+}: {
+  initialArticles: CmsArticle[];
+  createOnMount?: boolean;
+}) {
   const [articles, setArticles] = useState(initialArticles);
   const [form, setForm] = useState<ArticleForm>(emptyForm);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(createOnMount);
   const [query, setQuery] = useState("");
   const filtered = useMemo(
     () =>

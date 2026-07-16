@@ -25,3 +25,20 @@ export async function requireUser(redirectTo = "/auth/v2/login") {
 
   return user;
 }
+
+export async function requireSuperAdminPage() {
+  const user = await requireUser();
+  const supabase = await createClient();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name,is_super_admin")
+    .eq("id", user.id)
+    .is("archived_at", null)
+    .maybeSingle();
+
+  if (!profile?.is_super_admin) {
+    redirect("/unauthorized");
+  }
+
+  return { user, profile };
+}

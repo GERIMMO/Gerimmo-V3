@@ -19,9 +19,15 @@ export async function loginAction(_state: AuthActionState, formData: FormData): 
   if (!parsed.success) return { message: parsed.error.issues[0]?.message ?? "Informations invalides." };
 
   const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword(parsed.data);
+  const { data, error } = await supabase.auth.signInWithPassword(parsed.data);
   if (error) return { message: "E-mail ou mot de passe incorrect." };
-  redirect("/dashboard/accueil");
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("is_super_admin")
+    .eq("id", data.user.id)
+    .is("archived_at", null)
+    .maybeSingle();
+  redirect(profile?.is_super_admin ? "/admin" : "/dashboard/accueil");
 }
 
 export async function forgotPasswordAction(_state: AuthActionState, formData: FormData): Promise<AuthActionState> {
