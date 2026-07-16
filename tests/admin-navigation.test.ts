@@ -26,6 +26,11 @@ test("la navigation Super Admin est centralisee et complete", async () => {
   for (const entry of priorityEntries) assert.match(navigation, new RegExp(`title: "${entry}"`));
   assert.match(navigation, /overview: "\/admin"/);
   assert.match(navigation, /administrators: "\/admin\/administrators"/);
+
+  const routeBlock = navigation.split("} as const;")[0] ?? "";
+  const routes = [...routeBlock.matchAll(/"(\/admin[^"]*)"/g)].map((match) => match[1]);
+  assert.equal(routes.length, 36);
+  assert.equal(new Set(routes).size, routes.length);
 });
 
 test("les routes admin sont protegees sur le serveur et dans le middleware", async () => {
