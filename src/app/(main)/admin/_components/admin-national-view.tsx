@@ -72,6 +72,8 @@ const STATUS_LABELS: Readonly<Record<string, string>> = {
   owner: "Propriétaire",
   contractor: "Artisan",
   tenant: "Locataire",
+  true: "Oui",
+  false: "Non",
 };
 
 function statusLabel(value: AdminNationalValue) {
@@ -206,7 +208,7 @@ export function AdminNationalView({ payload }: { readonly payload: AdminNational
                 <EmptyMedia variant="icon">
                   <Database />
                 </EmptyMedia>
-                <EmptyTitle>{payload.rows.length === 0 ? `Aucun ${payload.sourceLabel}` : "Aucun résultat"}</EmptyTitle>
+                <EmptyTitle>{payload.rows.length === 0 ? "Aucune donnée disponible" : "Aucun résultat"}</EmptyTitle>
                 <EmptyDescription>
                   {payload.rows.length === 0
                     ? "Aucune donnée réelle n’est encore enregistrée pour ce périmètre."
