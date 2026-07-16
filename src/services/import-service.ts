@@ -34,7 +34,7 @@ function rowToRecord(headers: string[], values: string[]) {
 }
 
 function entityOf(record: Record<string, string>): ImportEntity | null {
-  const value = record.entity_type?.toLowerCase() as ImportEntity;
+  const value = record.entity_type.toLowerCase() as ImportEntity;
   return allowedEntities.has(value) ? value : null;
 }
 
@@ -57,7 +57,7 @@ async function existingDuplicateKeys() {
   for (const row of organizations.data ?? []) keys.add(`organization:${row.slug.toLowerCase()}`);
   for (const row of properties.data ?? []) {
     const organization = row.organizations as unknown as { slug?: string };
-    if (organization?.slug) keys.add(`property:${organization.slug.toLowerCase()}:${row.reference.toLowerCase()}`);
+    if (organization.slug) keys.add(`property:${organization.slug.toLowerCase()}:${row.reference.toLowerCase()}`);
   }
   for (const row of [...(profiles.data ?? []), ...(invitations.data ?? [])]) {
     if (row.email) keys.add(`email:${String(row.email).toLowerCase()}`);
@@ -86,12 +86,15 @@ export async function previewImport(file: File): Promise<ImportPreview> {
     const key = entity && errors.length === 0 ? duplicateKey(entity, source) : null;
     const duplicate = Boolean(key && (persisted.has(key) || seen.has(key)));
     if (key) seen.add(key);
+    let status: ImportRowPreview["status"] = "valid";
+    if (errors.length > 0) status = "error";
+    else if (duplicate) status = "duplicate";
     return {
       row_number: index + 2,
       entity_type: entity ?? "agency",
       source_data: source,
       normalized_data: source,
-      status: errors.length ? "error" : duplicate ? "duplicate" : "valid",
+      status,
       errors,
       duplicate_key: key,
     };

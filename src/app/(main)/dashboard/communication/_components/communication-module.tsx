@@ -47,7 +47,15 @@ const notificationLabels: Record<NotificationType, string> = {
   intervention: "Interventions",
 };
 
-export function CommunicationModule({ initialPayload }: { initialPayload: CommunicationPayload }) {
+type CommunicationTab = "notifications" | "messages" | "activite" | "preferences";
+
+export function CommunicationModule({
+  initialPayload,
+  initialTab = "notifications",
+}: {
+  initialPayload: CommunicationPayload;
+  initialTab?: CommunicationTab;
+}) {
   const [payload, setPayload] = useState(initialPayload);
   const [query, setQuery] = useState("");
   const [notificationType, setNotificationType] = useState("toutes");
@@ -129,7 +137,7 @@ export function CommunicationModule({ initialPayload }: { initialPayload: Commun
         </div>
       </div>
 
-      <Tabs defaultValue="notifications" className="flex min-h-0 flex-1 flex-col">
+      <Tabs defaultValue={initialTab} className="flex min-h-0 flex-1 flex-col">
         <TabsList className="w-full justify-start overflow-x-auto md:w-fit">
           <TabsTrigger value="notifications">
             <Bell />

@@ -1,5 +1,14 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { listUsers } from "@/services/utilisateurs-service";
 
-export default function Page() {
-  return <ModulePlaceholder title="Locataires" />;
+import { UtilisateursModule } from "../utilisateurs/_components/utilisateurs-module";
+
+export default async function Page() {
+  return (
+    <UtilisateursModule
+      initialPayload={await listUsers()}
+      fixedMemberType="tenant"
+      title="Locataires"
+      description="Locataires actifs, invitations et historique des comptes."
+    />
+  );
 }

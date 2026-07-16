@@ -5,7 +5,6 @@ import type { InviteUserInput, UpdateUserInput, UsersPayload } from "@/types/uti
 import {
   assertSupervisionManager,
   assertSupervisionOrganization,
-  assertSupervisionPortal,
   assertSupervisionProfile,
   getSupervisionDataScope,
   recordSupervisionAction,
@@ -63,6 +62,19 @@ export async function listUsers(): Promise<UsersPayload> {
 
   const supervision = await getSupervisionDataScope();
   const supervisedOrganizationId = supervision?.organizationId ?? null;
+  const { data: auth } = await supabase.auth.getUser();
+  const membership = auth.user
+    ? await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .eq("profile_id", auth.user.id)
+        .eq("status", "active")
+        .is("archived_at", null)
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (membership.error) throw membership.error;
+  const organizationId = supervisedOrganizationId ?? membership.data?.organization_id ?? null;
   const users = ((members.data ?? []) as MemberRecord[])
     .filter(
       (member) =>
@@ -94,6 +106,7 @@ export async function listUsers(): Promise<UsersPayload> {
     });
 
   return {
+    organizationId,
     users,
     invitations: ((invitations.data ?? []) as UsersPayload["invitations"]).filter(
       (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,

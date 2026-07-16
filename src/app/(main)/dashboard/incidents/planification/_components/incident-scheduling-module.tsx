@@ -13,7 +13,7 @@ import type { IncidentSchedulingPayload, ScheduleResponseAction } from "@/types/
 
 export function IncidentSchedulingModule({ initialPayload }: { initialPayload: IncidentSchedulingPayload }) {
   const [payload, setPayload] = useState(initialPayload);
-  const [selectedId, setSelectedId] = useState(initialPayload.requests[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(initialPayload.requests.at(0)?.id || "");
   const selected = payload.requests.find((item) => item.id === selectedId) ?? null;
   const slots = useMemo(
     () => payload.slots.filter((item) => item.schedule_request_id === selectedId),

@@ -1,14 +1,15 @@
-import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+
 import { ArrowRight, BellRing, Bot, CheckCircle2, FileCheck2, Gauge, ShieldCheck, Wrench } from "lucide-react";
+import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { ProfitabilityCalculator } from "./_components/profitability-calculator";
 import { ProductPreview } from "./_components/product-preview";
+import { ProfitabilityCalculator } from "./_components/profitability-calculator";
 import { CtaBand } from "./_components/public-shell";
 
 export const metadata: Metadata = {

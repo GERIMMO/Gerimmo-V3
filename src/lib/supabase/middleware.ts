@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { createServerClient } from "@supabase/ssr";
 
+import { canAccessDashboardPath, memberTypeToPortalType } from "@/lib/auth/portal-capabilities";
+
 import type { Database } from "./types";
 
 function getSupabaseMiddlewareConfig() {
@@ -20,8 +22,24 @@ export async function updateSession(request: NextRequest) {
     request,
   });
   const config = getSupabaseMiddlewareConfig();
+  const pathname = request.nextUrl.pathname;
+  const isProtectedApplicationPath = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
+  const isPublicWebhook =
+    pathname === "/api/bot/telegram/webhook" ||
+    pathname === "/api/stripe/webhook" ||
+    pathname === "/api/automations/business" ||
+    pathname === "/api/cron/production-health";
+  const isPublicCommercial = pathname === "/api/commercial";
 
   if (!config) {
+    if (isProtectedApplicationPath) {
+      const loginUrl = new URL("/auth/v2/login", request.url);
+      loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(loginUrl);
+    }
+    if (pathname.startsWith("/api/") && !isPublicWebhook && !isPublicCommercial) {
+      return NextResponse.json({ message: "Authentification requise." }, { status: 401 });
+    }
     return response;
   }
 
@@ -50,10 +68,6 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const isAuthenticated = Boolean(data?.claims?.sub);
-  const pathname = request.nextUrl.pathname;
-
-  const isProtectedApplicationPath = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
-
   if (!isAuthenticated && isProtectedApplicationPath) {
     const loginUrl = new URL("/auth/v2/login", request.url);
     loginUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
@@ -71,12 +85,16 @@ export async function updateSession(request: NextRequest) {
     if (profile.data?.is_super_admin) return response;
     const membership = await supabase
       .from("organization_members")
-      .select("organization_id")
+      .select("organization_id,member_type")
       .eq("profile_id", userId)
       .eq("status", "active")
       .is("archived_at", null)
       .limit(1)
       .maybeSingle();
+    const portalType = memberTypeToPortalType(membership.data?.member_type);
+    if (!canAccessDashboardPath(portalType, pathname)) {
+      return NextResponse.redirect(new URL("/unauthorized", request.url));
+    }
     if (membership.data?.organization_id) {
       const subscription = await supabase
         .from("organization_subscriptions" as never)
@@ -90,12 +108,6 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
-  const isPublicWebhook =
-    pathname === "/api/bot/telegram/webhook" ||
-    pathname === "/api/stripe/webhook" ||
-    pathname === "/api/automations/business" ||
-    pathname === "/api/cron/production-health";
-  const isPublicCommercial = pathname === "/api/commercial";
   if (!isAuthenticated && pathname.startsWith("/api/") && !isPublicWebhook && !isPublicCommercial) {
     return NextResponse.json({ message: "Authentification requise." }, { status: 401 });
   }

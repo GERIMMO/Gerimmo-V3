@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
 import Link from "next/link";
+
 import { BookOpen, CirclePlay, FileQuestion, Rocket } from "lucide-react";
+import type { Metadata } from "next";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";

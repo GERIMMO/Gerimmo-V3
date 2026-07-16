@@ -50,6 +50,7 @@ export type UserStatusHistory = {
 };
 
 export type UsersPayload = {
+  organizationId: string | null;
   users: GerimmoUser[];
   invitations: UserInvitation[];
   activities: UserActivity[];

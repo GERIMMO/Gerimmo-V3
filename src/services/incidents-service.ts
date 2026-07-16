@@ -59,6 +59,32 @@ export async function listIncidents(): Promise<IncidentsPayload> {
 export async function createIncident(input: CreateIncidentInput) {
   await assertSupervisionBien(input.bien_id);
   const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("Authentification requise.");
+  const property = await supabase
+    .from("biens")
+    .select("organization_id")
+    .eq("id", input.bien_id)
+    .eq("organization_id", input.organization_id)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (property.error || !property.data) throw new Error("Bien hors de cette organisation.");
+  if (input.category_id) {
+    const category = await supabase
+      .from("incident_categories")
+      .select("id,organization_id")
+      .eq("id", input.category_id)
+      .is("archived_at", null)
+      .maybeSingle();
+    const categoryOrganizationId = (category.data as { organization_id: string | null } | null)?.organization_id;
+    if (
+      category.error ||
+      !category.data ||
+      (categoryOrganizationId && categoryOrganizationId !== input.organization_id)
+    ) {
+      throw new Error("Catégorie d’incident hors de cette organisation.");
+    }
+  }
   const { data, error } = await supabase
     .from("incidents")
     .insert({
@@ -68,6 +94,7 @@ export async function createIncident(input: CreateIncidentInput) {
       photos: [],
       future_links: futureLinks,
       ...input,
+      created_by: auth.user.id,
     } as never)
     .select("*")
     .single();

@@ -13,7 +13,7 @@ import type { IncidentQuoteComparisonsPayload } from "@/types/incident-quote-com
 
 export function QuoteComparisonModule({ initialPayload }: { initialPayload: IncidentQuoteComparisonsPayload }) {
   const [payload, setPayload] = useState(initialPayload);
-  const [selectedComparisonId, setSelectedComparisonId] = useState(initialPayload.comparisons[0]?.id ?? "");
+  const [selectedComparisonId, setSelectedComparisonId] = useState(initialPayload.comparisons.at(0)?.id || "");
   const selected = payload.comparisons.find((item) => item.id === selectedComparisonId) ?? null;
   const items = useMemo(
     () =>

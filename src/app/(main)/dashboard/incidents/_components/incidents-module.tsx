@@ -14,7 +14,6 @@ import { Textarea } from "@/components/ui/textarea";
 import type {
   GerimmoIncident,
   IncidentEvent,
-  IncidentPhoto,
   IncidentPriority,
   IncidentStatus,
   IncidentsPayload,
@@ -46,7 +45,7 @@ type IncidentForm = {
   subcategory: string;
   description: string;
   priority: IncidentPriority;
-  photos: IncidentPhoto[];
+  photoFiles: File[];
 };
 
 const emptyForm: IncidentForm = {
@@ -56,7 +55,7 @@ const emptyForm: IncidentForm = {
   subcategory: "",
   description: "",
   priority: "normale",
-  photos: [],
+  photoFiles: [],
 };
 
 export function IncidentsModule({
@@ -74,15 +73,15 @@ export function IncidentsModule({
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("tous");
   const [priorityFilter, setPriorityFilter] = useState("toutes");
-  const [selectedId, setSelectedId] = useState(initialPayload.incidents[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(initialPayload.incidents.at(0)?.id ?? "");
   const [createOpen, setCreateOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     ...emptyForm,
-    bien_id: biens[0]?.id ?? "",
-    responsible_profile_id: responsables[0]?.id ?? "",
-    category_id: categories[0]?.id ?? "",
+    bien_id: biens.at(0)?.id ?? "",
+    responsible_profile_id: responsables.at(0)?.id ?? "",
+    category_id: categories.at(0)?.id ?? "",
   });
 
   const bienLabel = useCallback(
@@ -121,30 +120,29 @@ export function IncidentsModule({
     if (!category || !bien || !form.description.trim()) return;
     const organizationId = bien.organizationId;
     if (!organizationId) throw new Error("Aucune organisation active.");
-    const response = await fetch("/api/incidents", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        organization_id: organizationId,
-        bien_id: form.bien_id,
-        responsible_profile_id: form.responsible_profile_id,
-        category_id: category.id,
-        category: category.name,
-        subcategory: form.subcategory || null,
-        description: form.description,
-        priority: form.priority,
-        photos: form.photos,
-      }),
-    });
+    const data = {
+      organization_id: organizationId,
+      bien_id: form.bien_id,
+      responsible_profile_id: form.responsible_profile_id,
+      category_id: category.id,
+      category: category.name,
+      subcategory: form.subcategory || null,
+      description: form.description,
+      priority: form.priority,
+    };
+    const request = new FormData();
+    request.set("data", JSON.stringify(data));
+    for (const file of form.photoFiles) request.append("photos", file);
+    const response = await fetch("/api/incidents", { method: "POST", body: request });
     if (!response.ok) throw new Error("Création impossible.");
     const incident = (await response.json()) as GerimmoIncident;
     await reload();
     setSelectedId(incident.id);
     setForm({
       ...emptyForm,
-      bien_id: biens[0]?.id ?? "",
-      responsible_profile_id: responsables[0]?.id ?? "",
-      category_id: categories[0]?.id ?? "",
+      bien_id: biens.at(0)?.id ?? "",
+      responsible_profile_id: responsables.at(0)?.id ?? "",
+      category_id: categories.at(0)?.id ?? "",
     });
     setCreateOpen(false);
     setDetailsOpen(true);
@@ -171,7 +169,7 @@ export function IncidentsModule({
           <h1 className="font-semibold text-2xl tracking-normal">Incidents</h1>
           <p className="text-muted-foreground text-sm">Creation et suivi initial des incidents GERIMMO.</p>
         </div>
-        <Button onClick={() => setCreateOpen(true)}>
+        <Button onClick={() => setCreateOpen(true)} disabled={biens.length === 0 || categories.length === 0}>
           <Plus className="size-4" />
           Nouvel incident
         </Button>
@@ -407,11 +405,7 @@ function IncidentFormFields({
           onChange={(event) =>
             onChange({
               ...form,
-              photos: Array.from(event.target.files ?? []).map((file) => ({
-                name: file.name,
-                size_bytes: file.size,
-                mime_type: file.type,
-              })),
+              photoFiles: Array.from(event.target.files ?? []),
             })
           }
         />

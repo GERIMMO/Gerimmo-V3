@@ -1,10 +1,9 @@
+import { analyzeQualityReport, sensitiveAreas, severityFromPriority } from "../src/services/quality-rules.ts";
+import type { QualityReport } from "../src/types/quality.ts";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
-
-import { analyzeQualityReport, sensitiveAreas, severityFromPriority } from "../src/services/quality-rules.ts";
-import type { QualityReport } from "../src/types/quality.ts";
 
 const report: QualityReport = {
   id: "report",

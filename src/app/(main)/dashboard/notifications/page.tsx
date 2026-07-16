@@ -1,5 +1,9 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { requireUser } from "@/lib/auth/guards";
+import { getCommunicationPayload } from "@/services/communication-service";
 
-export default function Page() {
-  return <ModulePlaceholder title="Notifications" />;
+import { CommunicationModule } from "../communication/_components/communication-module";
+
+export default async function Page() {
+  await requireUser();
+  return <CommunicationModule initialPayload={await getCommunicationPayload()} initialTab="notifications" />;
 }

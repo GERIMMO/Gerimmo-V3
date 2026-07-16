@@ -4,28 +4,65 @@ test("les surfaces critiques existent et restent protégées", async ({ page, re
   await page.goto("/auth/v2/login");
   await expect(page.getByRole("heading", { name: "GERIMMO V3" })).toBeVisible();
   for (const route of [
-    "/dashboard/biens",
-    "/dashboard/locataires",
-    "/dashboard/incidents",
-    "/dashboard/documents",
-    "/dashboard/incidents/devis",
-    "/dashboard/incidents/dossier",
+    "/dashboard/accueil",
+    "/dashboard/a-faire",
     "/dashboard/abonnement",
+    "/dashboard/artisans",
+    "/dashboard/biens",
+    "/dashboard/communication",
+    "/dashboard/documents",
+    "/dashboard/echanges",
+    "/dashboard/locataires",
+    "/dashboard/notifications",
+    "/dashboard/onboarding",
+    "/dashboard/parametres",
+    "/dashboard/parametres/telegram",
+    "/dashboard/proprietaires",
+    "/dashboard/qualite/signaler",
+    "/dashboard/rapports",
+    "/dashboard/utilisateurs",
+    "/dashboard/incidents",
+    "/dashboard/incidents/devis",
+    "/dashboard/incidents/devis/comparatif",
+    "/dashboard/incidents/dossier",
+    "/dashboard/incidents/planification",
+    "/admin",
+    "/admin/agencies",
+    "/admin/bugs",
+    "/admin/settings",
   ]) {
     const response = await request.get(route, { maxRedirects: 0 });
     expect([302, 307, 308]).toContain(response.status());
   }
-  const quality = await request.post("/api/quality", {
-    multipart: { title: "Test", description: "Signalement E2E contrôlé", priority: "low" },
-  });
-  expect(quality.status()).toBe(401);
+  for (const route of [
+    "/api/admin",
+    "/api/admin/imports",
+    "/api/admin/supervision",
+    "/api/articles",
+    "/api/bot/telegram/admin",
+    "/api/business",
+    "/api/communication",
+    "/api/documents",
+    "/api/incidents",
+    "/api/incidents/devis",
+    "/api/incidents/devis/comparatif",
+    "/api/incidents/finalisation",
+    "/api/incidents/planification",
+    "/api/onboarding",
+    "/api/patrimoine",
+    "/api/quality",
+    "/api/utilisateurs",
+  ]) {
+    const response = await request.get(route, { maxRedirects: 0 });
+    expect(response.status(), route).toBe(401);
+  }
 });
 
 test("le parcours public présente la valeur et mène à l'essai", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "GERIMMO", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: /Essai gratuit de 14 jours/ })).toBeVisible();
-  for (const route of ["/tarifs", "/demonstration", "/aide", "/pourquoi-gerimmo", "/contact"]) {
+  for (const route of ["/tarifs", "/demonstration", "/aide", "/pourquoi-gerimmo", "/contact", "/demarrer"]) {
     await page.goto(route);
     await expect(page.locator("h1")).toBeVisible();
   }

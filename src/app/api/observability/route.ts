@@ -1,6 +1,6 @@
-import { randomUUID } from "node:crypto";
-
 import { createClient } from "@/lib/supabase/server";
+
+import { randomUUID } from "node:crypto";
 
 export async function POST(request: Request) {
   const supabase = await createClient();

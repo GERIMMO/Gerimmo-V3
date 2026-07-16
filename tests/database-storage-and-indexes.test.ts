@@ -14,6 +14,18 @@ test("les pieces jointes d'incident sont lisibles uniquement dans le perimetre a
   assert.doesNotMatch(migration, /to anon/);
 });
 
+test("les photos du dashboard sont liées à un incident autorisé", async () => {
+  const migration = await readFile(
+    path.join(process.cwd(), "supabase/migrations/20260716150000_incident_dashboard_uploads.sql"),
+    "utf8",
+  );
+  assert.match(migration, /can_create_incident\(organization_id, bien_id, created_by\)/);
+  assert.match(migration, /jsonb_array_elements\(incident\.photos\)/);
+  assert.match(migration, /photo ->> 'url' = name/);
+  assert.match(migration, /occupant\.occupant_type = 'locataire'/);
+  assert.match(migration, /occupant\.bien_id/);
+});
+
 test("les relations des parcours principaux sont indexees sans indexer les colonnes d'archivage", async () => {
   const migration = await readFile(
     path.join(process.cwd(), "supabase/migrations/20260716123000_relationship_indexes.sql"),

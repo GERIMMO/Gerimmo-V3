@@ -1,10 +1,10 @@
 "use client";
 
-import { demoAgency } from "@/config/demo-data";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { demoAgency } from "@/config/demo-data";
 
 export function DemoCenter() {
   return (
@@ -107,7 +107,7 @@ function DemoTable({ headers, rows }: { headers: string[]; rows: string[][] }) {
         {rows.map((row) => (
           <TableRow key={row.join("-")}>
             {row.map((cell, index) => (
-              <TableCell key={`${cell}-${index}`}>
+              <TableCell key={`${headers[index]}:${cell}`}>
                 {index === row.length - 1 ? <Badge variant="secondary">{cell}</Badge> : cell}
               </TableCell>
             ))}

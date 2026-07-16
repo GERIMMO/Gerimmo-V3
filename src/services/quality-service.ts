@@ -1,11 +1,10 @@
-import { randomUUID } from "node:crypto";
-
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { QualityCenterPayload, QualityPriority, QualityReport } from "@/types/quality";
 
 import { requireSuperAdmin } from "./administration-service";
 import { analyzeQualityReport, sensitiveAreas } from "./quality-rules";
+import { randomUUID } from "node:crypto";
 
 const allowedTypes = new Set(["image/png", "image/jpeg", "image/webp", "video/mp4", "video/webm"]);
 

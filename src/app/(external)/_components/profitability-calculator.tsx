@@ -1,11 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
+
 import { Clock3, Euro, TrendingUp } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+function monthlyAgencyPrice(properties: number) {
+  if (properties <= 50) return 79;
+  if (properties <= 150) return 149;
+  if (properties <= 300) return 249;
+  return 399;
+}
 
 export function ProfitabilityCalculator() {
   const [properties, setProperties] = useState(80);
@@ -14,7 +22,7 @@ export function ProfitabilityCalculator() {
   const result = useMemo(() => {
     const savedHours = Math.round((adminHours * 0.28 + incidents * 0.45 + properties * 0.035) * 10) / 10;
     const savedCost = Math.round(savedHours * 32);
-    const monthlyPrice = properties <= 50 ? 79 : properties <= 150 ? 149 : properties <= 300 ? 249 : 399;
+    const monthlyPrice = monthlyAgencyPrice(properties);
     return { savedHours, savedCost, roi: Math.max(0, Math.round(((savedCost - monthlyPrice) / monthlyPrice) * 100)) };
   }, [properties, incidents, adminHours]);
   return (

@@ -113,6 +113,40 @@ export function getPortalNavigationIds(type: SupervisionTargetType): readonly st
     .map(([id]) => id);
 }
 
+const dashboardRouteCapabilities: readonly [prefix: string, capability: PortalCapability][] = [
+  ["/dashboard/a-faire", "view:tasks"],
+  ["/dashboard/incidents", "view:incidents"],
+  ["/dashboard/biens", "view:properties"],
+  ["/dashboard/utilisateurs", "view:users"],
+  ["/dashboard/locataires", "view:users"],
+  ["/dashboard/proprietaires", "view:users"],
+  ["/dashboard/artisans", "view:contractors"],
+  ["/dashboard/documents", "view:documents"],
+  ["/dashboard/communication", "view:communication"],
+  ["/dashboard/echanges", "view:communication"],
+  ["/dashboard/notifications", "view:communication"],
+  ["/dashboard/rapports", "view:reports"],
+  ["/dashboard/parametres", "manage:settings"],
+  ["/dashboard/abonnement", "manage:subscription"],
+  ["/dashboard/onboarding", "view:dashboard"],
+  ["/dashboard/qualite", "view:dashboard"],
+  ["/dashboard/accueil", "view:dashboard"],
+  ["/dashboard", "view:dashboard"],
+];
+
+export function requiredCapabilityForDashboardPath(pathname: string): PortalCapability | null {
+  return (
+    dashboardRouteCapabilities.find(
+      ([prefix]) => pathname === prefix || (prefix !== "/dashboard" && pathname.startsWith(`${prefix}/`)),
+    )?.[1] ?? null
+  );
+}
+
+export function canAccessDashboardPath(type: SupervisionTargetType, pathname: string) {
+  const capability = requiredCapabilityForDashboardPath(pathname);
+  return capability ? hasPortalCapability(type, capability) : true;
+}
+
 export function memberTypeToPortalType(memberType: string | null | undefined): SupervisionTargetType {
   if (memberType === "owner") return "owner";
   if (memberType === "tenant") return "tenant";

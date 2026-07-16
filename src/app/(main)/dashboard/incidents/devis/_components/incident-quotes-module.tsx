@@ -14,7 +14,7 @@ import type { IncidentQuotesPayload } from "@/types/incident-quotes";
 
 export function IncidentQuotesModule({ initialPayload }: { initialPayload: IncidentQuotesPayload }) {
   const [payload, setPayload] = useState(initialPayload);
-  const [selectedId, setSelectedId] = useState(initialPayload.requests[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(initialPayload.requests.at(0)?.id || "");
   const selected = payload.requests.find((item) => item.id === selectedId) ?? null;
   const recipients = useMemo(
     () => payload.recipients.filter((item) => item.quote_request_id === selectedId),

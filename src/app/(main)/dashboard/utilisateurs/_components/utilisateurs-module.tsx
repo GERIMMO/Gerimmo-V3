@@ -37,14 +37,34 @@ const statusLabels: Record<UserStatus, string> = {
   suspended: "Suspendu",
   archived: "Archive",
 };
-export function UtilisateursModule({ initialPayload }: { initialPayload: UsersPayload }) {
+const invitationRoles: Record<UserMemberType, string> = {
+  admin: "administrateur_agence",
+  agent: "agent_immobilier",
+  owner: "proprietaire",
+  contractor: "artisan",
+  tenant: "locataire",
+};
+
+interface UtilisateursModuleProps {
+  readonly initialPayload: UsersPayload;
+  readonly fixedMemberType?: UserMemberType;
+  readonly title?: string;
+  readonly description?: string;
+}
+
+export function UtilisateursModule({
+  initialPayload,
+  fixedMemberType,
+  title = "Utilisateurs",
+  description = "Agences, équipes, propriétaires, locataires et artisans.",
+}: UtilisateursModuleProps) {
   const [users, setUsers] = useState(initialPayload.users);
   const [invitations, setInvitations] = useState(initialPayload.invitations);
   const [activities, setActivities] = useState(initialPayload.activities);
   const [statusHistory, setStatusHistory] = useState(initialPayload.statusHistory);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(initialPayload.users[0]?.profile_id ?? null);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(initialPayload.users.at(0)?.profile_id ?? null);
   const [query, setQuery] = useState("");
-  const [typeFilter, setTypeFilter] = useState<UserMemberType | "tous">("tous");
+  const [typeFilter, setTypeFilter] = useState<UserMemberType | "tous">(fixedMemberType ?? "tous");
   const [statusFilter, setStatusFilter] = useState<UserStatus | "tous">("tous");
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -102,8 +122,9 @@ export function UtilisateursModule({ initialPayload }: { initialPayload: UsersPa
     await reload();
   }
   async function inviteUser() {
-    const organizationId = users[0]?.organization_id;
+    const organizationId = initialPayload.organizationId;
     if (!organizationId || !inviteEmail.trim()) return;
+    const memberType = fixedMemberType ?? "agent";
     const response = await fetch("/api/utilisateurs", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -111,8 +132,8 @@ export function UtilisateursModule({ initialPayload }: { initialPayload: UsersPa
         organization_id: organizationId,
         email: inviteEmail.trim(),
         full_name: inviteName.trim() || inviteEmail.trim(),
-        member_type: "agent",
-        role_key: "agent_immobilier",
+        member_type: memberType,
+        role_key: invitationRoles[memberType],
       }),
     });
     if (!response.ok) throw new Error("Invitation impossible.");
@@ -125,8 +146,8 @@ export function UtilisateursModule({ initialPayload }: { initialPayload: UsersPa
     <div className="flex h-full flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-heading font-semibold text-xl tracking-normal">Utilisateurs</h1>
-          <p className="text-muted-foreground text-sm">Agences, equipes, proprietaires, locataires et artisans.</p>
+          <h1 className="font-heading font-semibold text-xl tracking-normal">{title}</h1>
+          <p className="text-muted-foreground text-sm">{description}</p>
         </div>
         <Button size="sm" onClick={() => setInviteOpen((value) => !value)}>
           <MailPlus />
@@ -148,8 +169,8 @@ export function UtilisateursModule({ initialPayload }: { initialPayload: UsersPa
         </div>
       ) : null}
       <div className="grid gap-3 md:grid-cols-4">
-        <Metric label="Utilisateurs" value={users.length} />
-        <Metric label="Actifs" value={users.filter((user) => user.status === "active").length} />
+        <Metric label={title} value={visibleUsers.length} />
+        <Metric label="Actifs" value={visibleUsers.filter((user) => user.status === "active").length} />
         <Metric label="Invitations" value={invitations.filter((item) => item.status === "pending").length} />
         <Metric label="Agences" value={new Set(users.map((user) => user.organization_id)).size} />
       </div>
@@ -163,12 +184,14 @@ export function UtilisateursModule({ initialPayload }: { initialPayload: UsersPa
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        <Filter
-          value={typeFilter}
-          values={memberLabels}
-          label="Tous roles"
-          onChange={(value) => setTypeFilter(value as UserMemberType | "tous")}
-        />
+        {!fixedMemberType ? (
+          <Filter
+            value={typeFilter}
+            values={memberLabels}
+            label="Tous roles"
+            onChange={(value) => setTypeFilter(value as UserMemberType | "tous")}
+          />
+        ) : null}
         <Filter
           value={statusFilter}
           values={statusLabels}

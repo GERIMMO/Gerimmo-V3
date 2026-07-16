@@ -1,10 +1,9 @@
-import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
-import path from "node:path";
-import test from "node:test";
-
 import { addTrialDays, canUsePlatform, planForPortfolio } from "../src/services/business-rules.ts";
 import type { SubscriptionPlan } from "../src/types/business.ts";
+import assert from "node:assert/strict";
+import { readdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import test from "node:test";
 
 const root = process.cwd();
 const plan = (audience: "owner" | "agency", min: number, max: number | null): SubscriptionPlan => ({

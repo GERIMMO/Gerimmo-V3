@@ -72,6 +72,7 @@ export type BienHistorique = {
 };
 
 export type PatrimoinePayload = {
+  organizationId: string | null;
   patrimoines: Patrimoine[];
   residences: Residence[];
   biens: Bien[];

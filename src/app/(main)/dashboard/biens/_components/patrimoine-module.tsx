@@ -1,16 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 
 import { Archive, Building2, CalendarClock, FileText, History, Home, Search, UserRound, Wrench } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import type { Bien, PatrimoinePayload, StatutBien, TypeBien } from "@/types/patrimoine";
 
 const statusLabels: Record<StatutBien, string> = {
@@ -27,6 +30,11 @@ const typeLabels: Record<TypeBien, string> = {
   terrain: "Terrain",
   autre: "Autre",
 };
+const createTitles = {
+  patrimoine: "Créer un patrimoine",
+  residence: "Créer une résidence",
+  bien: "Ajouter un bien",
+};
 
 function centsToEuros(value: number) {
   return new Intl.NumberFormat("fr-FR", { currency: "EUR", style: "currency" }).format(value / 100);
@@ -39,7 +47,20 @@ export function PatrimoineModule({ initialPayload }: { initialPayload: Patrimoin
   const [occupants, setOccupants] = useState(initialPayload.occupants);
   const [echeances, setEcheances] = useState(initialPayload.echeances);
   const [historique, setHistorique] = useState(initialPayload.historique);
-  const [selectedBienId, setSelectedBienId] = useState<string | null>(initialPayload.biens[0]?.id ?? null);
+  const [selectedBienId, setSelectedBienId] = useState<string | null>(initialPayload.biens.at(0)?.id ?? null);
+  const [createMode, setCreateMode] = useState<"patrimoine" | "residence" | "bien" | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState({
+    name: "",
+    reference: "",
+    description: "",
+    patrimoineId: "",
+    residenceId: "",
+    address: "",
+    postalCode: "",
+    city: "",
+    type: "appartement" as TypeBien,
+  });
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatutBien | "tous">("tous");
   const [typeFilter, setTypeFilter] = useState<TypeBien | "tous">("tous");
@@ -79,41 +100,64 @@ export function PatrimoineModule({ initialPayload }: { initialPayload: Patrimoin
     if (type === "bien") setSelectedBienId(created.id);
   }
 
-  async function createPatrimoine() {
-    const organizationId = patrimoines[0]?.organization_id ?? biens[0]?.organization_id;
-    if (!organizationId) return;
-    await createResource("patrimoine", {
-      organization_id: organizationId,
-      name: `Patrimoine ${patrimoines.length + 1}`,
-      reference: `PAT-${String(patrimoines.length + 1).padStart(3, "0")}`,
-    });
-  }
-
-  async function createResidence() {
-    const patrimoine = patrimoines[0];
-    if (!patrimoine) return;
-    await createResource("residence", {
-      organization_id: patrimoine.organization_id,
-      patrimoine_id: patrimoine.id,
-      name: `Résidence ${residences.length + 1}`,
-      reference: `RES-${String(residences.length + 1).padStart(3, "0")}`,
-    });
-  }
-
-  async function createBien() {
-    const patrimoine = patrimoines[0];
-    if (!patrimoine) return;
-    await createResource("bien", {
-      organization_id: patrimoine.organization_id,
-      patrimoine_id: patrimoine.id,
-      residence_id: residences[0]?.id ?? null,
-      reference: `B-${String(biens.length + 1).padStart(3, "0")}`,
-      name: `Bien ${biens.length + 1}`,
+  function openCreate(mode: "patrimoine" | "residence" | "bien") {
+    setForm((current) => ({
+      ...current,
+      name: "",
+      reference: "",
+      description: "",
+      patrimoineId: patrimoines.at(0)?.id ?? "",
+      residenceId: "",
+      address: "",
+      postalCode: "",
+      city: "",
       type: "appartement",
-      status: "vacant",
-      monthly_rent_cents: 0,
-      monthly_charges_cents: 0,
-    });
+    }));
+    setCreateMode(mode);
+  }
+
+  async function submitCreate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!createMode || !initialPayload.organizationId || !form.name.trim() || !form.reference.trim()) return;
+    if (createMode !== "patrimoine" && !form.patrimoineId) return toast.error("Sélectionnez un patrimoine.");
+    setCreating(true);
+    const common = {
+      organization_id: initialPayload.organizationId,
+      name: form.name.trim(),
+      reference: form.reference.trim(),
+    };
+    try {
+      if (createMode === "patrimoine") {
+        await createResource(createMode, { ...common, description: form.description.trim() || null });
+      } else if (createMode === "residence") {
+        await createResource(createMode, {
+          ...common,
+          patrimoine_id: form.patrimoineId,
+          address_line1: form.address.trim() || null,
+          postal_code: form.postalCode.trim() || null,
+          city: form.city.trim() || null,
+        });
+      } else {
+        await createResource(createMode, {
+          ...common,
+          patrimoine_id: form.patrimoineId,
+          residence_id: form.residenceId || null,
+          type: form.type,
+          status: "vacant",
+          address_line1: form.address.trim() || null,
+          postal_code: form.postalCode.trim() || null,
+          city: form.city.trim() || null,
+          monthly_rent_cents: 0,
+          monthly_charges_cents: 0,
+        });
+      }
+      toast.success("Création enregistrée.");
+      setCreateMode(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Création impossible.");
+    } finally {
+      setCreating(false);
+    }
   }
 
   function updateSelectedBien(field: keyof Bien, value: Bien[keyof Bien]) {
@@ -151,20 +195,166 @@ export function PatrimoineModule({ initialPayload }: { initialPayload: Patrimoin
           <p className="text-muted-foreground text-sm">Gestion compacte des patrimoines, residences et biens.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={createPatrimoine}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => openCreate("patrimoine")}
+            disabled={!initialPayload.organizationId}
+          >
             <Building2 />
             Patrimoine
           </Button>
-          <Button size="sm" variant="outline" onClick={createResidence}>
+          <Button size="sm" variant="outline" onClick={() => openCreate("residence")} disabled={!patrimoines.length}>
             <Home />
             Residence
           </Button>
-          <Button size="sm" onClick={createBien}>
+          <Button size="sm" onClick={() => openCreate("bien")} disabled={!patrimoines.length}>
             <Building2 />
             Bien
           </Button>
         </div>
       </div>
+      <Sheet open={Boolean(createMode)} onOpenChange={(open) => !open && setCreateMode(null)}>
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
+          <form className="flex min-h-full flex-col" onSubmit={submitCreate}>
+            <SheetHeader>
+              <SheetTitle>{createMode ? createTitles[createMode] : "Créer"}</SheetTitle>
+              <SheetDescription>Renseignez les informations réelles avant la création.</SheetDescription>
+            </SheetHeader>
+            <FieldGroup className="px-4 py-2">
+              <Field>
+                <FieldLabel htmlFor="resource-name">Nom</FieldLabel>
+                <Input
+                  id="resource-name"
+                  required
+                  value={form.name}
+                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="resource-reference">Référence</FieldLabel>
+                <Input
+                  id="resource-reference"
+                  required
+                  value={form.reference}
+                  onChange={(event) => setForm({ ...form, reference: event.target.value })}
+                />
+              </Field>
+              {createMode === "patrimoine" ? (
+                <Field>
+                  <FieldLabel htmlFor="resource-description">Description</FieldLabel>
+                  <Textarea
+                    id="resource-description"
+                    value={form.description}
+                    onChange={(event) => setForm({ ...form, description: event.target.value })}
+                  />
+                </Field>
+              ) : (
+                <>
+                  <Field>
+                    <FieldLabel>Patrimoine</FieldLabel>
+                    <Select
+                      value={form.patrimoineId}
+                      onValueChange={(value) => setForm({ ...form, patrimoineId: value, residenceId: "" })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Choisir un patrimoine" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {patrimoines.map((patrimoine) => (
+                            <SelectItem key={patrimoine.id} value={patrimoine.id}>
+                              {patrimoine.reference} · {patrimoine.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                  {createMode === "bien" ? (
+                    <>
+                      <Field>
+                        <FieldLabel>Résidence</FieldLabel>
+                        <Select
+                          value={form.residenceId || "none"}
+                          onValueChange={(value) => setForm({ ...form, residenceId: value === "none" ? "" : value })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              <SelectItem value="none">Sans résidence</SelectItem>
+                              {residences
+                                .filter((residence) => residence.patrimoine_id === form.patrimoineId)
+                                .map((residence) => (
+                                  <SelectItem key={residence.id} value={residence.id}>
+                                    {residence.reference} · {residence.name}
+                                  </SelectItem>
+                                ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                      <Field>
+                        <FieldLabel>Type de bien</FieldLabel>
+                        <Select
+                          value={form.type}
+                          onValueChange={(value) => setForm({ ...form, type: value as TypeBien })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectGroup>
+                              {Object.entries(typeLabels).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                      </Field>
+                    </>
+                  ) : null}
+                  <Field>
+                    <FieldLabel htmlFor="resource-address">Adresse</FieldLabel>
+                    <Input
+                      id="resource-address"
+                      value={form.address}
+                      onChange={(event) => setForm({ ...form, address: event.target.value })}
+                    />
+                  </Field>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field>
+                      <FieldLabel htmlFor="resource-postal-code">Code postal</FieldLabel>
+                      <Input
+                        id="resource-postal-code"
+                        value={form.postalCode}
+                        onChange={(event) => setForm({ ...form, postalCode: event.target.value })}
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="resource-city">Ville</FieldLabel>
+                      <Input
+                        id="resource-city"
+                        value={form.city}
+                        onChange={(event) => setForm({ ...form, city: event.target.value })}
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
+            </FieldGroup>
+            <SheetFooter>
+              <Button type="submit" disabled={creating || !form.name.trim() || !form.reference.trim()}>
+                {creating ? "Création en cours" : "Créer"}
+              </Button>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
       <div className="grid gap-3 md:grid-cols-4">
         <Metric label="Patrimoines" value={patrimoines.length} />
         <Metric label="Residences" value={residences.length} />
@@ -259,17 +449,17 @@ export function PatrimoineModule({ initialPayload }: { initialPayload: Patrimoin
                     </div>
                   </div>
                   <div className="grid gap-3 md:grid-cols-3">
-                    <Field
+                    <EditableField
                       label="Nom"
                       value={selectedBien.name}
                       onChange={(value) => updateSelectedBien("name", value)}
                     />
-                    <Field
+                    <EditableField
                       label="Reference"
                       value={selectedBien.reference}
                       onChange={(value) => updateSelectedBien("reference", value)}
                     />
-                    <Field
+                    <EditableField
                       label="Ville"
                       value={selectedBien.city ?? ""}
                       onChange={(value) => updateSelectedBien("city", value)}
@@ -333,12 +523,14 @@ function Filter({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value="tous">{label}</SelectItem>
-        {Object.entries(values).map(([key, item]) => (
-          <SelectItem key={key} value={key}>
-            {item}
-          </SelectItem>
-        ))}
+        <SelectGroup>
+          <SelectItem value="tous">{label}</SelectItem>
+          {Object.entries(values).map(([key, item]) => (
+            <SelectItem key={key} value={key}>
+              {item}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );
@@ -351,7 +543,7 @@ function Metric({ label, value }: Readonly<{ label: string; value: number | stri
     </div>
   );
 }
-function Field({
+function EditableField({
   label,
   value,
   onChange,

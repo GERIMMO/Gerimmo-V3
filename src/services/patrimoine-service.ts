@@ -51,6 +51,19 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
   }
   const supervision = await getSupervisionDataScope();
   const supervisedOrganizationId = supervision?.organizationId ?? null;
+  const { data: auth } = await supabase.auth.getUser();
+  const membership = auth.user
+    ? await supabase
+        .from("organization_members")
+        .select("organization_id")
+        .eq("profile_id", auth.user.id)
+        .eq("status", "active")
+        .is("archived_at", null)
+        .limit(1)
+        .maybeSingle()
+    : { data: null, error: null };
+  if (membership.error) throw membership.error;
+  const organizationId = supervisedOrganizationId ?? membership.data?.organization_id ?? null;
   const scopedBiens = ((biens.data ?? []) as Bien[]).filter(
     (bien) =>
       !supervisedOrganizationId ||
@@ -60,6 +73,7 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
   const bienIds = new Set(scopedBiens.map((bien) => bien.id));
 
   return {
+    organizationId,
     patrimoines: ((patrimoines.data ?? []) as Patrimoine[]).filter(
       (item) => !supervisedOrganizationId || item.organization_id === supervisedOrganizationId,
     ),
@@ -102,6 +116,14 @@ export async function createResidence(input: CreateResidenceInput) {
   await assertSupervisionManager();
   await assertSupervisionOrganization(input.organization_id);
   const supabase = await createClient();
+  const patrimoine = await supabase
+    .from("patrimoines")
+    .select("id")
+    .eq("id", input.patrimoine_id)
+    .eq("organization_id", input.organization_id)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (patrimoine.error || !patrimoine.data) throw new Error("Patrimoine hors de cette organisation.");
   const { data, error } = await supabase
     .from("residences")
     .insert(input as never)
@@ -121,6 +143,25 @@ export async function createBien(input: CreateBienInput) {
   await assertSupervisionManager();
   await assertSupervisionOrganization(input.organization_id);
   const supabase = await createClient();
+  const patrimoine = await supabase
+    .from("patrimoines")
+    .select("id")
+    .eq("id", input.patrimoine_id)
+    .eq("organization_id", input.organization_id)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (patrimoine.error || !patrimoine.data) throw new Error("Patrimoine hors de cette organisation.");
+  if (input.residence_id) {
+    const residence = await supabase
+      .from("residences")
+      .select("id")
+      .eq("id", input.residence_id)
+      .eq("patrimoine_id", input.patrimoine_id)
+      .eq("organization_id", input.organization_id)
+      .is("archived_at", null)
+      .maybeSingle();
+    if (residence.error || !residence.data) throw new Error("Résidence hors du patrimoine sélectionné.");
+  }
   const { data, error } = await supabase
     .from("biens")
     .insert(input as never)
@@ -140,6 +181,12 @@ export async function updateBien({ id, ...input }: UpdateBienInput) {
   await assertSupervisionPortal(["agency", "owner", "property"]);
   await assertSupervisionBien(id);
   const supabase = await createClient();
+  const current = await supabase.from("biens").select("organization_id").eq("id", id).maybeSingle();
+  if (current.error || !current.data) throw new Error("Bien introuvable.");
+  const currentOrganizationId = (current.data as { organization_id: string }).organization_id;
+  if (input.organization_id && input.organization_id !== currentOrganizationId) {
+    throw new Error("Le transfert d’un bien vers une autre organisation est interdit.");
+  }
   const { data, error } = await supabase
     .from("biens")
     .update(input as never)

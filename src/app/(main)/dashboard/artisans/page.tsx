@@ -1,5 +1,14 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { listUsers } from "@/services/utilisateurs-service";
 
-export default function Page() {
-  return <ModulePlaceholder title="Artisans" />;
+import { UtilisateursModule } from "../utilisateurs/_components/utilisateurs-module";
+
+export default async function Page() {
+  return (
+    <UtilisateursModule
+      initialPayload={await listUsers()}
+      fixedMemberType="contractor"
+      title="Artisans"
+      description="Artisans autorisés à intervenir pour votre organisation."
+    />
+  );
 }

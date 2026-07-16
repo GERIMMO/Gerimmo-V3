@@ -1,5 +1,5 @@
-import type { Metadata } from "next";
 import { Check, Minus } from "lucide-react";
+import type { Metadata } from "next";
 
 import { Badge } from "@/components/ui/badge";
 

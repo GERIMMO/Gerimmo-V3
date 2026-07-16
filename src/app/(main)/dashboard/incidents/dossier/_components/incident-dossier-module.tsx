@@ -22,7 +22,7 @@ export function IncidentDossierModule({
   scheduling: IncidentSchedulingPayload;
   finalization: IncidentFinalizationPayload;
 }) {
-  const [selectedId, setSelectedId] = useState(incidents.incidents[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState(incidents.incidents.at(0)?.id || "");
   const [finalization, setFinalization] = useState(initialFinalization);
   const incident = incidents.incidents.find((item) => item.id === selectedId) ?? null;
   const requests = quotes.requests.filter((item) => item.incident_id === selectedId);
