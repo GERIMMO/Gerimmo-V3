@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { AdminModulePlaceholder } from "@/app/(main)/admin/_components/admin-module-placeholder";
+import { AdminNationalView } from "@/app/(main)/admin/_components/admin-national-view";
 import { ActionCenter } from "@/app/(main)/dashboard/a-faire/_components/action-center";
 import { SuperAdminConsole } from "@/app/(main)/dashboard/super-admin/_components/super-admin-console";
 import { ArticlesConsole } from "@/app/(main)/dashboard/super-admin/articles/_components/articles-console";
@@ -10,6 +10,7 @@ import MarketingPage from "@/app/(main)/dashboard/super-admin/marketing/page";
 import QualityPage from "@/app/(main)/dashboard/super-admin/qualite/page";
 import TelegramPage from "@/app/(main)/dashboard/super-admin/telegram/page";
 import { adminSearchItems } from "@/navigation/admin/admin-navigation";
+import { getAdminNationalView, isAdminNationalSection } from "@/services/admin-national-service";
 import { getAdminDashboard, getPilotage, listArticles } from "@/services/administration-service";
 
 interface AdminSectionPageProps {
@@ -73,8 +74,9 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
     return <ArticlesConsole initialArticles={await listArticles(true)} createOnMount={query.create === "1"} />;
   }
 
+  if (isAdminNationalSection(section)) return <AdminNationalView payload={await getAdminNationalView(section)} />;
+
   const item = adminSearchItems.find((candidate) => candidate.href === `/admin/${section}`);
   if (!item) notFound();
-
-  return <AdminModulePlaceholder title={item.title} />;
+  notFound();
 }

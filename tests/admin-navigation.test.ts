@@ -70,3 +70,46 @@ test("le menu agence ne contient plus le centre Super Admin ni les actions facti
   assert.doesNotMatch(sidebar, /dashboard\/super-admin/);
   assert.doesNotMatch(navMain, /Quick Create|Inbox/);
 });
+
+test("toutes les vues nationales utilisent des donnees reelles", async () => {
+  const [route, service, view] = await Promise.all([
+    source("src/app/(main)/admin/[section]/page.tsx"),
+    source("src/services/admin-national-service.ts"),
+    source("src/app/(main)/admin/_components/admin-national-view.tsx"),
+  ]);
+  const sections = [
+    "properties",
+    "users",
+    "incidents",
+    "quotes",
+    "interventions",
+    "contractors",
+    "documents",
+    "messages",
+    "notifications",
+    "reports",
+    "support",
+    "ideas",
+    "automations",
+    "security",
+    "settings",
+    "document-templates",
+    "roles",
+    "administrators",
+  ];
+
+  for (const section of sections) assert.match(service, new RegExp(`"${section}"`));
+  assert.match(service, /await requireSuperAdmin\(\)/);
+  assert.match(route, /getAdminNationalView\(section\)/);
+  assert.doesNotMatch(route, /AdminModulePlaceholder|Module en préparation/);
+  assert.match(view, /Données réelles enregistrées dans Supabase/);
+  assert.match(view, /SheetContent/);
+  assert.doesNotMatch(`${service}\n${view}`, /org-demo|mockData|fakeData/i);
+});
+
+test("les vues nationales sont bornees et n'exposent pas les fichiers documentaires", async () => {
+  const service = await source("src/services/admin-national-service.ts");
+  assert.match(service, /const LIMIT = 100/);
+  assert.match(service, /\.limit\(LIMIT\)/);
+  assert.doesNotMatch(service, /storage_path|file_path|signed_url|service_role/i);
+});
