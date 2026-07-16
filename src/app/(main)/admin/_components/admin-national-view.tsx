@@ -2,9 +2,13 @@
 
 import { useMemo, useState } from "react";
 
-import { ChevronRight, Database, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+
+import { ChevronRight, Database, Eye, Search } from "lucide-react";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
@@ -128,6 +132,28 @@ export function AdminNationalView({ payload }: { readonly payload: AdminNational
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<AdminNationalRow | null>(null);
+  const router = useRouter();
+
+  async function supervise(row: AdminNationalRow) {
+    if (!row.supervision) return;
+    const response = await fetch("/api/admin/supervision", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        action: "start",
+        type: row.supervision.type,
+        targetId: row.supervision.targetId,
+        reason: "Assistance et contrôle Super Admin",
+      }),
+    });
+    if (!response.ok) {
+      const error = (await response.json()) as { message?: string };
+      toast.error(error.message ?? "Supervision impossible.");
+      return;
+    }
+    router.push("/dashboard/accueil");
+    router.refresh();
+  }
 
   const statusOptions = useMemo(() => {
     if (!payload.statusKey) return [];
@@ -226,7 +252,7 @@ export function AdminNationalView({ payload }: { readonly payload: AdminNational
                     <TableHead key={column.key}>{column.label}</TableHead>
                   ))}
                   <TableHead className="w-10">
-                    <span className="sr-only">Consulter</span>
+                    <span className="sr-only">Actions</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -259,7 +285,21 @@ export function AdminNationalView({ payload }: { readonly payload: AdminNational
                       </TableCell>
                     ))}
                     <TableCell className="pr-4 text-right">
-                      <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+                      {row.supervision ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void supervise(row);
+                          }}
+                        >
+                          <Eye data-icon="inline-start" />
+                          Entrer dans le portail
+                        </Button>
+                      ) : (
+                        <ChevronRight className="ml-auto size-4 text-muted-foreground" />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

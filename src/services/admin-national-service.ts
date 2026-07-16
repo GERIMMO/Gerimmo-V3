@@ -377,37 +377,101 @@ async function loadMembers(section: "users" | "contractors"): Promise<AdminNatio
   if (error) throw error;
   const members = (data ?? []) as unknown as LooseRow[];
   const profileIds = [...new Set(members.map((row) => String(row.profile_id)))];
-  const [{ data: profiles, error: profileError }, names] = await Promise.all([
+  const contractors = section === "contractors";
+  const [{ data: profiles, error: profileError }, names, subscriptionsResult, interventionsResult] = await Promise.all([
     profileIds.length > 0
-      ? admin.from("profiles").select("id,full_name,email,phone").in("id", profileIds)
+      ? admin.from("profiles").select("id,full_name,email,phone,updated_at").in("id", profileIds)
       : Promise.resolve({ data: [], error: null }),
     organizationNames(members),
+    admin
+      .from("organization_subscriptions" as never)
+      .select("organization_id,status,updated_at")
+      .order("updated_at", { ascending: false }),
+    contractors && profileIds.length > 0
+      ? admin
+          .from("incident_interventions")
+          .select("organization_id,artisan_profile_id,bien_id,incident_id")
+          .in("artisan_profile_id", profileIds)
+          .is("archived_at", null)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (profileError) throw profileError;
+  if (subscriptionsResult.error) throw subscriptionsResult.error;
+  if (interventionsResult.error) throw interventionsResult.error;
   const profileMap = new Map(((profiles ?? []) as LooseRow[]).map((row) => [String(row.id), row]));
+  const subscriptionMap = new Map<string, string>();
+  for (const subscription of (subscriptionsResult.data ?? []) as unknown as LooseRow[]) {
+    const organizationId = String(subscription.organization_id);
+    if (!subscriptionMap.has(organizationId)) subscriptionMap.set(organizationId, String(subscription.status));
+  }
+  const interventions = (interventionsResult.data ?? []) as LooseRow[];
+  const bienIds = [...new Set(interventions.map((row) => String(row.bien_id)))];
+  const { data: occupants, error: occupantError } =
+    contractors && bienIds.length > 0
+      ? await admin
+          .from("bien_occupants")
+          .select("bien_id,profile_id")
+          .in("bien_id", bienIds)
+          .eq("occupant_type", "locataire")
+          .is("archived_at", null)
+      : { data: [], error: null };
+  if (occupantError) throw occupantError;
+  const tenantsByBien = new Map<string, Set<string>>();
+  for (const occupant of (occupants ?? []) as LooseRow[]) {
+    const bienId = String(occupant.bien_id);
+    const tenants = tenantsByBien.get(bienId) ?? new Set<string>();
+    tenants.add(String(occupant.profile_id));
+    tenantsByBien.set(bienId, tenants);
+  }
+  const contractorStats = new Map<
+    string,
+    { readonly biens: Set<string>; readonly incidents: Set<string>; readonly tenants: Set<string> }
+  >();
+  for (const intervention of interventions) {
+    const key = `${String(intervention.artisan_profile_id)}:${String(intervention.organization_id)}`;
+    const stats = contractorStats.get(key) ?? {
+      biens: new Set<string>(),
+      incidents: new Set<string>(),
+      tenants: new Set<string>(),
+    };
+    const bienId = String(intervention.bien_id);
+    stats.biens.add(bienId);
+    stats.incidents.add(String(intervention.incident_id));
+    for (const tenantId of tenantsByBien.get(bienId) ?? []) stats.tenants.add(tenantId);
+    contractorStats.set(key, stats);
+  }
   const columns: AdminNationalColumn[] = [
-    { key: "email", label: "E-mail" },
-    { key: "member_type", label: "Rôle", format: "status" },
     { key: "status", label: "Statut", format: "status" },
-    { key: "phone", label: "Téléphone" },
-    { key: "joined_at", label: "Actif depuis", format: "date" },
+    { key: "subscription", label: "Abonnement", format: "status" },
+    { key: "last_activity", label: "Dernière activité", format: "date" },
+    { key: "properties_count", label: "Biens" },
+    { key: "tenants_count", label: "Locataires" },
+    { key: "incidents_count", label: "Incidents" },
   ];
   const rows = members.map((member): AdminNationalRow => {
     const profile = profileMap.get(String(member.profile_id)) ?? {};
+    const organizationId = String(member.organization_id);
+    const profileId = String(member.profile_id);
+    const stats = contractorStats.get(`${profileId}:${organizationId}`);
     return {
       id: String(member.id),
       title: String(profile.full_name ?? profile.email ?? "Profil sans nom"),
-      organizationName: names.get(String(member.organization_id)) ?? "Organisation inconnue",
+      organizationName: names.get(organizationId) ?? "Organisation inconnue",
       values: {
-        email: toValue(profile.email),
-        member_type: toValue(member.member_type),
         status: toValue(member.status),
-        phone: toValue(profile.phone),
-        joined_at: toValue(member.joined_at),
+        subscription: toValue(subscriptionMap.get(organizationId)),
+        last_activity: toValue(profile.updated_at ?? member.joined_at),
+        properties_count: stats?.biens.size ?? 0,
+        tenants_count: stats?.tenants.size ?? 0,
+        incidents_count: stats?.incidents.size ?? 0,
+      },
+      supervision: {
+        type: contractors ? "contractor" : "user",
+        targetId: profileId,
+        organizationId,
       },
     };
   });
-  const contractors = section === "contractors";
   return {
     section,
     title: contractors ? "Artisans" : "Utilisateurs",

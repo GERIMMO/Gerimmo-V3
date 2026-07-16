@@ -1,5 +1,9 @@
 import { notFound } from "next/navigation";
 
+import { ClipboardCheck, FileCheck2, FileInput, MessageSquareText } from "lucide-react";
+
+import { AdminAuditLog } from "@/app/(main)/admin/_components/admin-audit-log";
+import { AdminModulePlaceholder } from "@/app/(main)/admin/_components/admin-module-placeholder";
 import { AdminNationalView } from "@/app/(main)/admin/_components/admin-national-view";
 import { SupervisionCenter } from "@/app/(main)/admin/_components/supervision-center";
 import { ActionCenter } from "@/app/(main)/dashboard/a-faire/_components/action-center";
@@ -11,6 +15,7 @@ import MarketingPage from "@/app/(main)/dashboard/super-admin/marketing/page";
 import QualityPage from "@/app/(main)/dashboard/super-admin/qualite/page";
 import TelegramPage from "@/app/(main)/dashboard/super-admin/telegram/page";
 import { adminSearchItems } from "@/navigation/admin/admin-navigation";
+import { getAdminAuditLog } from "@/services/admin-audit-service";
 import { getAdminNationalView, isAdminNationalSection } from "@/services/admin-national-service";
 import { getAdminDashboard, getPilotage, listArticles } from "@/services/administration-service";
 import { getSupervisionCenter } from "@/services/supervision-service";
@@ -55,26 +60,69 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
     );
   }
 
-  if (section === "audit-log") {
+  if (section === "audit-log") return <AdminAuditLog payload={await getAdminAuditLog()} />;
+
+  if (["system-health", "alerts", "technical-log", "bugs", "feedback"].includes(section)) return <QualityPage />;
+  if (["subscriptions", "offers", "promotion-codes", "revenue", "payments", "billing", "analytics"].includes(section)) {
+    return <BusinessPage />;
+  }
+  if (["property-imports", "user-imports", "imports"].includes(section)) return <ImportsPage />;
+  if (["growth", "usage", "acquisition", "retention", "marketing"].includes(section)) return <MarketingPage />;
+  if (["bot-configuration", "bots", "telegram", "integrations"].includes(section)) return <TelegramPage />;
+
+  if (section === "articles" || section === "global-announcements") {
+    const query = await searchParams;
+    return <ArticlesConsole initialArticles={await listArticles(true)} createOnMount={query.create === "1"} />;
+  }
+
+  if (section === "user-requests") {
+    return <AdminNationalView payload={await getAdminNationalView("support")} />;
+  }
+
+  if (section === "communications") {
+    return <AdminNationalView payload={await getAdminNationalView("messages")} />;
+  }
+
+  if (section === "integration-cases") {
     return (
-      <SuperAdminConsole
-        initialPayload={await getAdminDashboard()}
-        title="Journal d’activité"
-        description="Actions administratives historisées."
-        defaultTab="journal"
+      <AdminModulePlaceholder
+        title="Dossiers d’intégration"
+        description="Suivi centralisé de l’arrivée des organisations et de leur mise en service."
+        icon={ClipboardCheck}
       />
     );
   }
 
-  if (["system-health", "bugs", "feedback"].includes(section)) return <QualityPage />;
-  if (["subscriptions", "billing", "revenue", "analytics"].includes(section)) return <BusinessPage />;
-  if (section === "imports") return <ImportsPage />;
-  if (section === "marketing") return <MarketingPage />;
-  if (section === "telegram" || section === "integrations") return <TelegramPage />;
+  if (section === "contractor-validation") {
+    return (
+      <AdminModulePlaceholder
+        title="Validation des artisans"
+        description="Contrôle des justificatifs légaux et administratifs avant activation."
+        icon={FileCheck2}
+      />
+    );
+  }
 
-  if (section === "articles") {
-    const query = await searchParams;
-    return <ArticlesConsole initialArticles={await listArticles(true)} createOnMount={query.create === "1"} />;
+  if (section === "initial-documents") {
+    return (
+      <AdminModulePlaceholder
+        title="Documents initiaux"
+        description="Contrôle des pièces nécessaires à l’ouverture d’un portail GERIMMO."
+        icon={FileInput}
+      />
+    );
+  }
+
+  if (["practical-information", "communication-templates"].includes(section)) {
+    const item = adminSearchItems.find((candidate) => candidate.href === `/admin/${section}`);
+    if (!item) notFound();
+    return (
+      <AdminModulePlaceholder
+        title={item.title}
+        description="Espace national de préparation et de gouvernance des communications GERIMMO."
+        icon={MessageSquareText}
+      />
+    );
   }
 
   if (isAdminNationalSection(section)) return <AdminNationalView payload={await getAdminNationalView(section)} />;

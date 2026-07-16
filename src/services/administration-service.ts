@@ -32,13 +32,25 @@ function countBy(rows: LooseRow[], key: string) {
 export async function getAdminDashboard(): Promise<AdminDashboardPayload> {
   await requireSuperAdmin();
   const admin = createAdminClient();
-  const [organizations, properties, members, incidents, documents, logs] = await Promise.all([
+  const [
+    organizations,
+    properties,
+    members,
+    incidents,
+    documents,
+    logs,
+    subscriptions,
+    tasks,
+    bugs,
+    onboarding,
+    alerts,
+  ] = await Promise.all([
     admin
       .from("organizations")
       .select("id,name,slug,organization_type,status,created_at")
       .order("created_at", { ascending: false }),
     admin.from("biens").select("organization_id").is("archived_at", null),
-    admin.from("organization_members").select("organization_id").is("archived_at", null),
+    admin.from("organization_members").select("organization_id,member_type").is("archived_at", null),
     admin.from("incidents").select("organization_id").is("archived_at", null),
     admin.from("documents").select("id").is("archived_at", null),
     admin
@@ -46,13 +58,64 @@ export async function getAdminDashboard(): Promise<AdminDashboardPayload> {
       .select("id,action,table_name,created_at,organization_id")
       .order("created_at", { ascending: false })
       .limit(80),
+    admin
+      .from("organization_subscriptions" as never)
+      .select("organization_id,status,updated_at")
+      .order("updated_at", { ascending: false }),
+    admin
+      .from("business_recommendations" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active"),
+    admin
+      .from("quality_reports" as never)
+      .select("id", { count: "exact", head: true })
+      .eq("priority", "critical")
+      .not("status", "in", "(resolved,rejected,archived)"),
+    admin
+      .from("organization_onboarding_progress" as never)
+      .select("organization_id,status")
+      .in("status", ["pending", "in_progress"]),
+    admin
+      .from("monitoring_alerts" as never)
+      .select("severity,status")
+      .in("status", ["open", "acknowledged"]),
   ]);
-  for (const result of [organizations, properties, members, incidents, documents, logs]) {
+  for (const result of [
+    organizations,
+    properties,
+    members,
+    incidents,
+    documents,
+    logs,
+    subscriptions,
+    tasks,
+    bugs,
+    onboarding,
+    alerts,
+  ]) {
     if (result.error) throw result.error;
   }
   const propertyCounts = countBy((properties.data ?? []) as LooseRow[], "organization_id");
   const memberCounts = countBy((members.data ?? []) as LooseRow[], "organization_id");
+  const tenantCounts = countBy(
+    ((members.data ?? []) as LooseRow[]).filter((member) => member.member_type === "tenant"),
+    "organization_id",
+  );
   const incidentCounts = countBy((incidents.data ?? []) as LooseRow[], "organization_id");
+  const subscriptionByOrganization = new Map<string, string>();
+  for (const row of (subscriptions.data ?? []) as unknown as LooseRow[]) {
+    const organizationId = String(row.organization_id);
+    if (!subscriptionByOrganization.has(organizationId)) {
+      subscriptionByOrganization.set(organizationId, String(row.status));
+    }
+  }
+  const lastActivityByOrganization = new Map<string, string>();
+  for (const row of (logs.data ?? []) as LooseRow[]) {
+    const organizationId = row.organization_id ? String(row.organization_id) : null;
+    if (organizationId && !lastActivityByOrganization.has(organizationId)) {
+      lastActivityByOrganization.set(organizationId, String(row.created_at));
+    }
+  }
   const mapped = ((organizations.data ?? []) as LooseRow[]).map(
     (row): AdminOrganization => ({
       id: String(row.id),
@@ -62,10 +125,24 @@ export async function getAdminDashboard(): Promise<AdminDashboardPayload> {
       status: row.status as AdminOrganization["status"],
       properties_count: propertyCounts.get(String(row.id)) ?? 0,
       users_count: memberCounts.get(String(row.id)) ?? 0,
+      tenants_count: tenantCounts.get(String(row.id)) ?? 0,
       incidents_count: incidentCounts.get(String(row.id)) ?? 0,
+      subscription_status: subscriptionByOrganization.get(String(row.id)) ?? null,
+      last_activity_at: lastActivityByOrganization.get(String(row.id)) ?? null,
       created_at: String(row.created_at),
     }),
   );
+  const newcomerOrganizations = new Set(
+    ((onboarding.data ?? []) as unknown as LooseRow[]).map((row) => String(row.organization_id)),
+  );
+  const healthPenalty = ((alerts.data ?? []) as unknown as LooseRow[]).reduce((total, alert) => {
+    if (alert.severity === "critical") return total + 20;
+    if (alert.severity === "error") return total + 8;
+    if (alert.severity === "warning") return total + 3;
+    return total + 1;
+  }, 0);
+  const healthPercent = Math.max(0, Math.min(100, 100 - healthPenalty));
+
   return {
     metrics: [
       {
@@ -80,8 +157,14 @@ export async function getAdminDashboard(): Promise<AdminDashboardPayload> {
       },
       { label: "Biens", value: properties.data?.length ?? 0, href: "/admin/properties" },
       { label: "Utilisateurs", value: members.data?.length ?? 0, href: "/admin/users" },
-      { label: "Incidents", value: incidents.data?.length ?? 0, href: "/admin/incidents" },
-      { label: "Documents", value: documents.data?.length ?? 0, href: "/admin/documents" },
+      { label: "Tâches à traiter", value: tasks.count ?? 0, href: "/admin/tasks" },
+      { label: "Bugs critiques", value: bugs.count ?? 0, href: "/admin/bugs" },
+      {
+        label: "Nouveaux arrivants",
+        value: newcomerOrganizations.size,
+        href: "/admin/integration-cases",
+      },
+      { label: "Santé GERIMMO", value: healthPercent, suffix: "%", href: "/admin/system-health" },
     ],
     organizations: mapped,
     logs: (logs.data ?? []) as AdminLog[],

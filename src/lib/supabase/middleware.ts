@@ -74,6 +74,19 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
+  if (isAuthenticated && pathname.startsWith("/admin")) {
+    const userId = String(data?.claims?.sub);
+    const profile = await supabase
+      .from("profiles")
+      .select("is_super_admin")
+      .eq("id", userId)
+      .is("archived_at", null)
+      .maybeSingle();
+    if (!profile.data?.is_super_admin) {
+      return NextResponse.redirect(new URL("/unauthorized", request.url));
+    }
+  }
+
   if (
     isAuthenticated &&
     pathname.startsWith("/dashboard") &&

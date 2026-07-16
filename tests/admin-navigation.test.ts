@@ -11,8 +11,26 @@ async function source(relativePath: string) {
 
 test("la navigation Super Admin est centralisee et complete", async () => {
   const navigation = await source("src/navigation/admin/admin-navigation.ts");
-  const groups = ["Centre de commandement", "Réseau GERIMMO", "Business", "Support", "Système"];
-  const priorityEntries = ["Vue d’ensemble", "À traiter", "Supervision temps réel", "Agences", "Bugs"];
+  const groups = [
+    "Réseau GERIMMO",
+    "Nouveaux arrivants",
+    "Business",
+    "Statistiques",
+    "Support",
+    "Communication",
+    "Système",
+  ];
+  const priorityEntries = [
+    "Vue d’ensemble",
+    "Agences",
+    "Dossiers d’intégration",
+    "Abonnements",
+    "Croissance",
+    "Demandes utilisateurs",
+    "Articles",
+    "Santé plateforme",
+    "Journal d’audit",
+  ];
 
   for (const group of groups) assert.match(navigation, new RegExp(`title: "${group}"`));
   for (const entry of priorityEntries) assert.match(navigation, new RegExp(`title: "${entry}"`));
@@ -21,8 +39,18 @@ test("la navigation Super Admin est centralisee et complete", async () => {
 
   const routeBlock = navigation.split("} as const;")[0] ?? "";
   const routes = [...routeBlock.matchAll(/"(\/admin[^"]*)"/g)].map((match) => match[1]);
-  assert.equal(routes.length, 36);
   assert.equal(new Set(routes).size, routes.length);
+  for (const route of [
+    "/admin/integration-cases",
+    "/admin/contractor-validation",
+    "/admin/promotion-codes",
+    "/admin/retention",
+    "/admin/global-announcements",
+    "/admin/technical-log",
+    "/admin/audit-log",
+  ]) {
+    assert.ok(routes.includes(route), `${route} doit etre centralisee`);
+  }
 });
 
 test("le mode supervision conserve l'identite et le JWT du Super Admin", async () => {
@@ -113,6 +141,7 @@ test("les routes admin sont protegees sur le serveur et dans le middleware", asy
   assert.match(guards, /profile\?\.is_super_admin/);
   assert.match(guards, /redirect\("\/unauthorized"\)/);
   assert.match(middleware, /pathname\.startsWith\("\/admin"\)/);
+  assert.match(middleware, /profile\.data\?\.is_super_admin/);
 });
 
 test("les anciens liens Super Admin redirigent vers la nouvelle architecture", async () => {
@@ -140,7 +169,7 @@ test("le menu agence ne contient plus le centre Super Admin ni les actions facti
   assert.doesNotMatch(navMain, /Quick Create|Inbox/);
 });
 
-test("toutes les vues nationales utilisent des donnees reelles", async () => {
+test("les vues nationales utilisent des donnees reelles et les nouveaux modules restent explicites", async () => {
   const [route, service, view] = await Promise.all([
     source("src/app/(main)/admin/[section]/page.tsx"),
     source("src/services/admin-national-service.ts"),
@@ -170,10 +199,29 @@ test("toutes les vues nationales utilisent des donnees reelles", async () => {
   for (const section of sections) assert.match(service, new RegExp(`"${section}"`));
   assert.match(service, /await requireSuperAdmin\(\)/);
   assert.match(route, /getAdminNationalView\(section\)/);
-  assert.doesNotMatch(route, /AdminModulePlaceholder|Module en préparation/);
+  assert.match(route, /AdminModulePlaceholder/);
+  assert.match(route, /integration-cases/);
+  assert.match(route, /contractor-validation/);
+  assert.match(route, /initial-documents/);
   assert.match(view, /Données réelles enregistrées dans Supabase/);
   assert.match(view, /SheetContent/);
   assert.doesNotMatch(`${service}\n${view}`, /org-demo|mockData|fakeData/i);
+});
+
+test("le journal d'audit unifie les actions metier et la supervision", async () => {
+  const [route, service, view] = await Promise.all([
+    source("src/app/(main)/admin/[section]/page.tsx"),
+    source("src/services/admin-audit-service.ts"),
+    source("src/app/(main)/admin/_components/admin-audit-log.tsx"),
+  ]);
+
+  assert.match(route, /getAdminAuditLog/);
+  assert.match(service, /audit_logs/);
+  assert.match(service, /admin_supervision_events/);
+  assert.match(service, /await requireSuperAdmin\(\)/);
+  for (const filter of ["Date", "Toutes les agences", "Tous les rôles", "Tous les modules", "Toutes les actions"]) {
+    assert.match(view, new RegExp(filter));
+  }
 });
 
 test("les vues nationales sont bornees et n'exposent pas les fichiers documentaires", async () => {

@@ -22,8 +22,8 @@ export function AdminCommandCenter({
     <section className="flex flex-col gap-4">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
         <div>
-          <h1 className="font-heading font-semibold text-2xl">Centre de commandement</h1>
-          <p className="text-muted-foreground text-sm">Pilotage national et accès aux portails GERIMMO.</p>
+          <h1 className="font-heading font-semibold text-2xl">Vue d’ensemble</h1>
+          <p className="text-muted-foreground text-sm">Supervision nationale de la plateforme GERIMMO.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline" size="sm">
@@ -40,13 +40,16 @@ export function AdminCommandCenter({
         </div>
       </header>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {dashboard.metrics.map((metric) => (
           <Link key={metric.label} href={metric.href} className="focus-visible:outline-none">
             <Card size="sm" className="h-full transition-colors hover:border-primary/40 focus-visible:ring-2">
               <CardHeader>
                 <CardDescription>{metric.label}</CardDescription>
-                <CardTitle className="text-2xl tabular-nums">{metric.value.toLocaleString("fr-FR")}</CardTitle>
+                <CardTitle className="text-2xl tabular-nums">
+                  {metric.value.toLocaleString("fr-FR")}
+                  {metric.suffix}
+                </CardTitle>
               </CardHeader>
             </Card>
           </Link>

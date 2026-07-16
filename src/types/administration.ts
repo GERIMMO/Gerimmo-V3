@@ -8,7 +8,10 @@ export type AdminOrganization = {
   status: "active" | "suspended" | "archived";
   properties_count: number;
   users_count: number;
+  tenants_count: number;
   incidents_count: number;
+  subscription_status: string | null;
+  last_activity_at: string | null;
   created_at: string;
 };
 
@@ -16,6 +19,7 @@ export type NationalMetric = {
   label: string;
   value: number;
   href: string;
+  suffix?: string;
 };
 
 export type AdminLog = {

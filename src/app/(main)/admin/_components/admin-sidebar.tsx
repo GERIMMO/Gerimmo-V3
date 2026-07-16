@@ -4,6 +4,7 @@ import Link from "next/link";
 
 import { Building2 } from "lucide-react";
 
+import { AdminCreateSheet } from "@/app/(main)/admin/_components/admin-create-sheet";
 import { AdminSearchDialog } from "@/app/(main)/admin/_components/admin-search-dialog";
 import { AdminSidebarNavigation } from "@/app/(main)/admin/_components/admin-sidebar-navigation";
 import { AdminUserMenu } from "@/app/(main)/admin/_components/admin-user-menu";
@@ -50,6 +51,9 @@ export function AdminSidebar({ user, ...props }: AdminSidebarProps) {
           </SidebarMenuItem>
         </SidebarMenu>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <AdminCreateSheet />
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <AdminSearchDialog />
           </SidebarMenuItem>

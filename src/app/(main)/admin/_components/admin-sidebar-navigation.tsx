@@ -25,10 +25,12 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import {
   type AdminNavigationGroup,
+  type AdminNavigationItem,
+  adminAuditItem,
   adminNavigationGroups,
+  adminOverviewItem,
   isAdminPathActive,
 } from "@/navigation/admin/admin-navigation";
 
@@ -45,9 +47,11 @@ export function AdminSidebarNavigation() {
     return (
       <SidebarGroup className="p-1">
         <SidebarMenu>
+          <CollapsedAdminItem item={adminOverviewItem} pathname={pathname} />
           {adminNavigationGroups.map((group) => (
             <CollapsedAdminGroup key={group.id} group={group} pathname={pathname} />
           ))}
+          <CollapsedAdminItem item={adminAuditItem} pathname={pathname} />
         </SidebarMenu>
       </SidebarGroup>
     );
@@ -55,10 +59,43 @@ export function AdminSidebarNavigation() {
 
   return (
     <div className="flex flex-col gap-0.5 px-1 pb-2">
+      <ExpandedAdminItem item={adminOverviewItem} pathname={pathname} onNavigate={handleNavigation} />
       {adminNavigationGroups.map((group) => (
         <ExpandedAdminGroup key={group.id} group={group} pathname={pathname} onNavigate={handleNavigation} />
       ))}
+      <ExpandedAdminItem item={adminAuditItem} pathname={pathname} onNavigate={handleNavigation} />
     </div>
+  );
+}
+
+function ExpandedAdminItem({
+  item,
+  pathname,
+  onNavigate,
+}: {
+  readonly item: AdminNavigationItem;
+  readonly pathname: string;
+  readonly onNavigate: () => void;
+}) {
+  return (
+    <SidebarGroup className="p-0">
+      <SidebarMenu>
+        <SidebarMenuItem>
+          <SidebarMenuButton
+            asChild
+            size="sm"
+            isActive={isAdminPathActive(pathname, item.href)}
+            tooltip={item.title}
+            className="font-semibold"
+          >
+            <Link href={item.href} prefetch={false} onClick={onNavigate}>
+              <item.icon />
+              <span>{item.title}</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      </SidebarMenu>
+    </SidebarGroup>
   );
 }
 
@@ -108,7 +145,7 @@ function ExpandedAdminGroup({
                     size="sm"
                     isActive={isAdminPathActive(pathname, item.href)}
                     tooltip={item.title}
-                    className={cn(item.emphasized && "font-medium")}
+                    className="font-medium"
                   >
                     <Link href={item.href} prefetch={false} onClick={onNavigate}>
                       <item.icon />
@@ -160,6 +197,19 @@ function CollapsedAdminGroup({ group, pathname }: { readonly group: AdminNavigat
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
+    </SidebarMenuItem>
+  );
+}
+
+function CollapsedAdminItem({ item, pathname }: { readonly item: AdminNavigationItem; readonly pathname: string }) {
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton asChild isActive={isAdminPathActive(pathname, item.href)} tooltip={item.title}>
+        <Link href={item.href} prefetch={false}>
+          <item.icon />
+          <span>{item.title}</span>
+        </Link>
+      </SidebarMenuButton>
     </SidebarMenuItem>
   );
 }

@@ -15,7 +15,7 @@ export function AdminTopbar() {
       <div className="flex min-w-0 items-center gap-2 px-4">
         <SidebarTrigger aria-label="Réduire ou ouvrir le menu" />
         <Separator orientation="vertical" className="data-[orientation=vertical]:h-4" />
-        <span className="truncate font-medium text-sm">{item?.title ?? "Centre de commandement"}</span>
+        <span className="truncate font-medium text-sm">{item?.title ?? "Super Admin GERIMMO"}</span>
       </div>
     </header>
   );

@@ -13,6 +13,11 @@ export interface AdminNationalRow {
   readonly title: string;
   readonly organizationName: string | null;
   readonly values: Readonly<Record<string, AdminNationalValue>>;
+  readonly supervision?: {
+    readonly type: "contractor" | "user";
+    readonly targetId: string;
+    readonly organizationId: string;
+  };
 }
 
 export interface AdminNationalPayload {

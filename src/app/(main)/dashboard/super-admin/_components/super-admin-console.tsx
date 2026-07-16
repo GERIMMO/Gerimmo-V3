@@ -19,6 +19,23 @@ import type { AdminDashboardPayload, AdminOrganization } from "@/types/administr
 
 const typeLabels = { agency: "Agence", independent_owner: "Propriétaire indépendant", internal: "Interne" };
 
+function formatDate(value: string | null) {
+  if (!value) return "Aucune activité";
+  return new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+}
+
+function subscriptionLabel(value: string | null) {
+  if (!value) return "Non renseigné";
+  const labels: Readonly<Record<string, string>> = {
+    trial: "Essai",
+    active: "Actif",
+    suspended: "Suspendu",
+    expired: "Expiré",
+    cancelled: "Résilié",
+  };
+  return labels[value] ?? value;
+}
+
 interface SuperAdminConsoleProps {
   readonly initialPayload: AdminDashboardPayload;
   readonly organizationType?: AdminOrganization["organization_type"];
@@ -128,11 +145,13 @@ export function SuperAdminConsole({
                   <TableRow>
                     <TableHead>Organisation</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>Abonnement</TableHead>
+                    <TableHead>Dernière activité</TableHead>
                     <TableHead>Biens</TableHead>
-                    <TableHead>Utilisateurs</TableHead>
+                    <TableHead>Locataires</TableHead>
                     <TableHead>Incidents</TableHead>
                     <TableHead>Statut</TableHead>
-                    <TableHead className="w-20 text-right">Gestion</TableHead>
+                    <TableHead className="w-40 text-right">Accès</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -142,27 +161,44 @@ export function SuperAdminConsole({
                         <div className="font-medium">{organization.name}</div>
                         <div className="text-muted-foreground text-xs">{organization.slug}</div>
                       </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Gérer ${organization.name}`}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelected(organization);
-                          }}
-                        >
-                          <Settings2 />
-                        </Button>
-                      </TableCell>
                       <TableCell>{typeLabels[organization.organization_type]}</TableCell>
+                      <TableCell>{subscriptionLabel(organization.subscription_status)}</TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {formatDate(organization.last_activity_at)}
+                      </TableCell>
                       <TableCell>{organization.properties_count}</TableCell>
-                      <TableCell>{organization.users_count}</TableCell>
+                      <TableCell>{organization.tenants_count}</TableCell>
                       <TableCell>{organization.incidents_count}</TableCell>
                       <TableCell>
                         <Badge variant={organization.status === "active" ? "default" : "secondary"}>
                           {organization.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void supervise(organization);
+                            }}
+                          >
+                            <Eye data-icon="inline-start" />
+                            Entrer dans le portail
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Gérer ${organization.name}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelected(organization);
+                            }}
+                          >
+                            <Settings2 />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
