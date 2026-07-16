@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { getPreference } from "@/server/server-actions";
 import { getActiveSupervision } from "@/services/supervision-service";
 
+import { PortalCommunicationBanner } from "./_components/portal-communication-banner";
 import { AccountSwitcher } from "./_components/sidebar/account-switcher";
 import { LayoutControls } from "./_components/sidebar/layout-controls";
 import { SearchDialog } from "./_components/sidebar/search-dialog";
@@ -57,6 +58,33 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
     getPreference("sidebar_variant"),
     getPreference("sidebar_collapsible"),
   ]);
+  const [communications, acknowledgements] = await Promise.all([
+    supabase
+      .from("admin_communications" as never)
+      .select("id,title,message,severity,requires_acknowledgement,starts_at" as never)
+      .eq("status" as never, "published" as never)
+      .is("archived_at" as never, null)
+      .order("starts_at" as never, { ascending: false, nullsFirst: false })
+      .limit(10),
+    supabase
+      .from("admin_communication_acknowledgements" as never)
+      .select("communication_id" as never)
+      .eq("profile_id" as never, user.id),
+  ]);
+  const acknowledgedIds = new Set(
+    ((acknowledgements.data ?? []) as unknown as Array<{ communication_id: string }>).map(
+      (item) => item.communication_id,
+    ),
+  );
+  const portalCommunications = (
+    (communications.data ?? []) as unknown as Array<{
+      id: string;
+      title: string;
+      message: string;
+      severity: string | null;
+      requires_acknowledgement: boolean;
+    }>
+  ).filter((item) => !acknowledgedIds.has(item.id));
 
   return (
     <SidebarProvider
@@ -113,6 +141,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
           </div>
         </header>
         {supervision ? <SupervisionBanner supervision={supervision} /> : null}
+        <PortalCommunicationBanner initialItems={portalCommunications} />
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
           <RouteTransition>{children}</RouteTransition>
         </div>
