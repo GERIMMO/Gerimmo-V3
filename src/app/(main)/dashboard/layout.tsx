@@ -11,9 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { requireUser } from "@/lib/auth/guards";
+import { memberTypeToPortalType } from "@/lib/auth/portal-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { cn } from "@/lib/utils";
-import { getSidebarItemsForSupervision, sidebarItems } from "@/navigation/sidebar/sidebar-items";
+import { getSidebarItemsForPortal, sidebarItems } from "@/navigation/sidebar/sidebar-items";
 import { getPreference } from "@/server/server-actions";
 import { getActiveSupervision } from "@/services/supervision-service";
 
@@ -31,6 +32,14 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
     .select("full_name,is_super_admin")
     .eq("id", user.id)
     .maybeSingle();
+  const { data: membership } = await supabase
+    .from("organization_members")
+    .select("member_type")
+    .eq("profile_id", user.id)
+    .eq("status", "active")
+    .is("archived_at", null)
+    .limit(1)
+    .maybeSingle();
   const currentUser = {
     id: user.id,
     name: profile?.full_name || user.email || "Utilisateur GERIMMO",
@@ -40,7 +49,10 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
   };
   const cookieStore = await cookies();
   const supervision = profile?.is_super_admin ? await getActiveSupervision() : null;
-  const navigationItems = supervision ? getSidebarItemsForSupervision(supervision.current.type) : sidebarItems;
+  const directPortalType = memberTypeToPortalType(membership?.member_type);
+  let navigationItems = sidebarItems;
+  if (supervision) navigationItems = getSidebarItemsForPortal(supervision.current.type);
+  else if (!profile?.is_super_admin) navigationItems = getSidebarItemsForPortal(directPortalType);
   const defaultOpen = cookieStore.get("sidebar_state")?.value !== "false";
   const [variant, collapsible] = await Promise.all([
     getPreference("sidebar_variant"),

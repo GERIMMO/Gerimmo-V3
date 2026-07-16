@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { getPortalNavigationIds, portalLabels } from "@/lib/auth/portal-capabilities";
 import type { SupervisionTargetType } from "@/types/supervision";
 
 export type NavBadge = "new" | "soon";
@@ -154,43 +155,13 @@ export const sidebarItems: NavGroup[] = [
   },
 ];
 
-const supervisionNavigation: Readonly<Record<SupervisionTargetType, readonly string[]>> = {
-  agency: sidebarItems[0].items.map((item) => item.id),
-  user: sidebarItems[0].items.map((item) => item.id),
-  owner: [
-    "accueil",
-    "a-faire",
-    "incidents",
-    "biens",
-    "locataires",
-    "artisans",
-    "documents",
-    "echanges",
-    "notifications",
-    "rapports",
-    "parametres",
-    "abonnement",
-    "signaler-probleme",
-  ],
-  property: ["accueil", "incidents", "locataires", "documents", "rapports", "signaler-probleme"],
-  tenant: ["accueil", "incidents", "documents", "echanges", "notifications", "signaler-probleme"],
-  contractor: ["accueil", "a-faire", "incidents", "documents", "echanges", "notifications", "signaler-probleme"],
-};
-
-const supervisionLabels: Readonly<Record<SupervisionTargetType, string>> = {
-  agency: "PORTAIL AGENCE",
-  owner: "PORTAIL PROPRIÉTAIRE",
-  property: "DOSSIER DU BIEN",
-  tenant: "PORTAIL LOCATAIRE",
-  contractor: "PORTAIL ARTISAN",
-  user: "PORTAIL UTILISATEUR",
-};
-
-export function getSidebarItemsForSupervision(type: SupervisionTargetType): NavGroup[] {
-  const allowed = new Set(supervisionNavigation[type]);
+export function getSidebarItemsForPortal(type: SupervisionTargetType): NavGroup[] {
+  const allowed = new Set(getPortalNavigationIds(type));
   return sidebarItems.map((group) => ({
     ...group,
-    label: supervisionLabels[type],
+    label: portalLabels[type],
     items: group.items.filter((item) => allowed.has(item.id)),
   }));
 }
+
+export const getSidebarItemsForSupervision = getSidebarItemsForPortal;

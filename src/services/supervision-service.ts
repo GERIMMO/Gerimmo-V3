@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 
+import { canEnterPortal } from "@/lib/auth/portal-capabilities";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { requireSuperAdmin } from "@/services/administration-service";
@@ -365,10 +366,8 @@ async function resolveTarget(
 
 async function validateTransition(current: SupervisionContextItem, target: SupervisionSearchResult) {
   if (current.organizationId !== target.organizationId) throw new Error("Changement d’organisation interdit.");
+  if (!canEnterPortal(current.type, target.type)) throw new Error("Transition de supervision non autorisée.");
   if (current.type === "agency") return;
-  if (current.type === "contractor" || current.type === "tenant" || current.type === "user") {
-    throw new Error("Ce portail ne permet pas d’approfondir la supervision.");
-  }
 
   const admin = createAdminClient();
   if (current.type === "owner") {
