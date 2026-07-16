@@ -6,6 +6,8 @@ import Link from "next/link";
 import { siGithub } from "simple-icons";
 
 import { AppSidebar } from "@/app/(main)/dashboard/_components/sidebar/app-sidebar";
+import { NavigationProgress } from "@/components/motion/navigation-progress";
+import { RouteTransition } from "@/components/motion/route-transition";
 import { SimpleIcon } from "@/components/simple-icon";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -65,6 +67,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
         } as React.CSSProperties
       }
     >
+      <NavigationProgress />
       <AppSidebar user={currentUser} portalType={portalType} variant={variant} collapsible={collapsible} />
       <SidebarInset
         className={cn(
@@ -111,7 +114,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
         </header>
         {supervision ? <SupervisionBanner supervision={supervision} /> : null}
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden p-4 has-data-[content-padding=false]:p-0 md:p-6 md:has-data-[content-padding=false]:p-0">
-          {children}
+          <RouteTransition>{children}</RouteTransition>
         </div>
       </SidebarInset>
     </SidebarProvider>

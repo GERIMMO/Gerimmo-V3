@@ -4,6 +4,8 @@ import { cookies } from "next/headers";
 
 import { AdminSidebar } from "@/app/(main)/admin/_components/admin-sidebar";
 import { AdminTopbar } from "@/app/(main)/admin/_components/admin-topbar";
+import { NavigationProgress } from "@/components/motion/navigation-progress";
+import { RouteTransition } from "@/components/motion/route-transition";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { requireSuperAdminPage } from "@/lib/auth/guards";
 
@@ -13,6 +15,7 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
 
   return (
     <SidebarProvider defaultOpen={defaultOpen} style={{ "--sidebar-width": "17rem" } as CSSProperties}>
+      <NavigationProgress />
       <AdminSidebar
         user={{
           name: profile.full_name || "Administrateur GERIMMO",
@@ -21,7 +24,9 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
       />
       <SidebarInset className="min-w-0">
         <AdminTopbar />
-        <main className="min-w-0 flex-1 p-4 md:p-5">{children}</main>
+        <main className="min-w-0 flex-1 p-4 md:p-5">
+          <RouteTransition>{children}</RouteTransition>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

@@ -245,6 +245,70 @@ html {
     transition-duration: 180ms;
     transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }
+
+  .gerimmo-page-enter {
+    animation: gerimmo-page-enter 240ms cubic-bezier(0.2, 0, 0, 1) both;
+  }
+
+  [data-slot="card"] {
+    transition:
+      box-shadow 180ms cubic-bezier(0.2, 0, 0, 1),
+      transform 180ms cubic-bezier(0.2, 0, 0, 1),
+      border-color 180ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  [data-slot="card"]:has(a[href], button):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px -20px color-mix(in oklch, var(--foreground) 40%, transparent);
+  }
+
+  [data-slot="table-row"],
+  [data-sidebar="menu-button"] svg {
+    transition:
+      background-color 160ms cubic-bezier(0.2, 0, 0, 1),
+      color 160ms cubic-bezier(0.2, 0, 0, 1),
+      transform 160ms cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  [data-sidebar="menu-button"]:hover > svg:first-child {
+    transform: translateX(1px);
+  }
+}
+
+@keyframes gerimmo-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gerimmo-progress {
+  0% {
+    transform: scaleX(0.02);
+  }
+  18% {
+    transform: scaleX(0.42);
+  }
+  55% {
+    transform: scaleX(0.72);
+  }
+  100% {
+    transform: scaleX(0.92);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gerimmo-page-enter {
+    animation: none;
+  }
+
+  [data-slot="card"]:has(a[href], button):hover {
+    transform: none;
+  }
 }
 
 .disable-transitions * {
