@@ -1,4 +1,4 @@
-export type BotChannel = "telegram";
+export type BotChannel = "telegram" | "whatsapp";
 export type BotRole = "locataire" | "artisan" | "responsable" | "proprietaire" | "agent" | "inconnu";
 export type BotIntent =
   | "declarer_incident"
@@ -96,9 +96,43 @@ export type TelegramAccount = {
 };
 
 export type BotOutgoingMessage = {
-  chatId: number;
+  // Telegram = chat id numérique ; WhatsApp = numéro E.164 (string).
+  chatId: number | string;
   text: string;
   buttons?: Array<Array<{ text: string; callbackData: string }>>;
+};
+
+// --- WhatsApp Cloud API (Meta) : structures entrantes du webhook ---
+export type WhatsAppInboundMessage = {
+  from: string;
+  id: string;
+  timestamp: string;
+  type: "text" | "interactive" | "image" | "document" | "button" | "audio" | "video" | string;
+  text?: { body: string };
+  interactive?: {
+    type: "button_reply" | "list_reply";
+    button_reply?: { id: string; title: string };
+    list_reply?: { id: string; title: string };
+  };
+  image?: { id: string; mime_type?: string; sha256?: string; caption?: string };
+  document?: { id: string; mime_type?: string; filename?: string; caption?: string };
+  button?: { text?: string; payload?: string };
+};
+
+export type WhatsAppInboundValue = {
+  messaging_product: "whatsapp";
+  metadata?: { display_phone_number?: string; phone_number_id?: string };
+  contacts?: Array<{ profile?: { name?: string }; wa_id: string }>;
+  messages?: WhatsAppInboundMessage[];
+  statuses?: Array<Record<string, unknown>>;
+};
+
+export type WhatsAppWebhookPayload = {
+  object: string;
+  entry?: Array<{
+    id: string;
+    changes?: Array<{ value: WhatsAppInboundValue; field: string }>;
+  }>;
 };
 
 export type BotAdminPayload = {
