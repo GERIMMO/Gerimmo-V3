@@ -30,25 +30,29 @@ Do not modify files inside `src/components/ui/` or `src/components/calendar/`. K
 
 ## Setup
 
-This project uses npm.
+This project uses pnpm (pinned via `packageManager` in `package.json`).
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 Available commands:
 
 ```bash
-npm run build
-npm run lint
-npm run format
-npm run check
-npm run check:fix
-npm run generate:presets
+pnpm run build
+pnpm run lint
+pnpm run format
+pnpm run check
+pnpm run check:fix
+pnpm run typecheck
+pnpm run test          # unit tests (node --test)
+pnpm run test:e2e      # end-to-end tests (Playwright)
+pnpm run ci            # check + typecheck + test + build (full gate)
+pnpm run generate:presets
 ```
 
-There is currently no automated test command. Run build, lint, check, or other validation commands only when the user explicitly requests that validation.
+Automated tests exist. Run `pnpm run ci` before pushing to reproduce the GitHub Actions "Qualite" pipeline locally. The authenticated E2E flow is skipped unless `E2E_USER_EMAIL` / `E2E_USER_PASSWORD` are set.
 
 ## Co-location-based structure
 
