@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { applyBrandIdentity } from "@/services/bot/brand-rules";
 import { resolveBotBrandIdentity } from "@/services/bot/branding";
+import type { BotChannelAdapter } from "@/services/bot/channel";
 import {
   allowedTenantDocumentTypes,
   classifyMessage,
@@ -126,7 +127,7 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 async function sendAndLog(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   conversation: BotConversation,
   message: Omit<BotOutgoingMessage, "chatId"> & { chatId?: number },
   chatId: number,
@@ -347,7 +348,7 @@ async function listHomes(supabase: AdminClient, account: TelegramAccount) {
 
 async function showIncidentSummary(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   conversation: BotConversation,
   chatId: number,
 ) {
@@ -449,7 +450,7 @@ async function createIncidentFromConversation(supabase: AdminClient, conversatio
 
 async function storeAttachment(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   conversation: BotConversation,
   message: TelegramMessage,
   messageId: string,
@@ -540,7 +541,7 @@ async function storeAttachment(
 
 async function showFollowUp(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   account: TelegramAccount,
   conversation: BotConversation,
   chatId: number,
@@ -575,7 +576,7 @@ async function showFollowUp(
 
 async function showDocuments(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   account: TelegramAccount,
   conversation: BotConversation,
   chatId: number,
@@ -648,7 +649,7 @@ async function prepareDocumentEmail(supabase: AdminClient, conversation: BotConv
 
 async function showSchedules(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   account: TelegramAccount,
   conversation: BotConversation,
   chatId: number,
@@ -733,7 +734,7 @@ async function saveScheduleSlots(
 
 async function processConnectedMessage(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   update: TelegramUpdate,
   account: TelegramAccount,
   message: TelegramMessage,
@@ -936,7 +937,7 @@ async function processConnectedMessage(
 
 async function processCallback(
   supabase: AdminClient,
-  adapter: TelegramAdapter,
+  adapter: BotChannelAdapter,
   update: TelegramUpdate,
   account: TelegramAccount,
   webhookId: string,
