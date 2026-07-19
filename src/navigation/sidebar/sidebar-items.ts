@@ -7,6 +7,7 @@ import {
   CreditCard,
   Database,
   File,
+  FileClock,
   LayoutDashboard,
   ListChecks,
   type LucideIcon,
@@ -121,6 +122,12 @@ export const sidebarItems: NavGroup[] = [
         title: "Documents",
         url: "/dashboard/documents",
         icon: File,
+      },
+      {
+        id: "documents-echeances",
+        title: "Échéances docs",
+        url: "/dashboard/documents-echeances",
+        icon: FileClock,
       },
       {
         id: "echanges",
