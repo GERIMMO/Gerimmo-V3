@@ -7,6 +7,7 @@ import {
   allowedTenantDocumentTypes,
   classifyMessage,
   parseAvailabilitySlots,
+  parseEurosToCents,
 } from "@/services/bot/message-understanding";
 import { TelegramAdapter } from "@/services/bot/telegram-adapter";
 import type {
@@ -298,8 +299,8 @@ export function roleMenu(role: string) {
     return {
       text: "Que souhaitez-vous faire ?",
       buttons: [
-        [{ text: "Mes demandes", callbackData: "menu_schedule" }],
         [{ text: "Proposer des disponibilites", callbackData: "menu_schedule" }],
+        [{ text: "Repondre a un devis", callbackData: "menu_quotes" }],
         [{ text: "Mes interventions", callbackData: "menu_interventions" }],
         [{ text: "Aide", callbackData: "menu_help" }],
       ],
@@ -321,6 +322,7 @@ export function roleMenu(role: string) {
     buttons: [
       [{ text: "Declarer un incident", callbackData: "menu_incident" }],
       [{ text: "Suivre mes incidents", callbackData: "menu_follow" }],
+      [{ text: "Valider un rendez-vous", callbackData: "menu_tenant_schedule" }],
       [{ text: "Demander un document", callbackData: "menu_documents" }],
       [{ text: "Aide", callbackData: "menu_help" }],
     ],
@@ -919,6 +921,402 @@ async function saveScheduleSlots(
   return slots;
 }
 
+function slotLabel(startsAt: string, endsAt: string) {
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  const day = start.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  const from = start.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const to = end.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  return `${day} ${from}-${to}`;
+}
+
+/** Demandes de créneaux transmises au locataire, en attente de son choix. */
+async function showTenantSchedules(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const requests = await supabase
+    .from("incident_schedule_requests")
+    .select("id,current_round,incidents(number)")
+    .eq("organization_id", account.organization_id)
+    .eq("tenant_profile_id", account.profile_id)
+    .eq("status", "transmis_locataire")
+    .is("archived_at", null)
+    .limit(10);
+  if (requests.error) throw requests.error;
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    {
+      text: requests.data?.length
+        ? "Selectionnez le rendez-vous pour lequel choisir un creneau :"
+        : "Aucun rendez-vous en attente de votre choix.",
+      buttons: (requests.data ?? []).map((request) => [
+        {
+          text: `${request.incidents?.[0]?.number ?? "Incident"}`,
+          callbackData: `tschedule:${request.id}`,
+        },
+      ]),
+    },
+    chatId,
+  );
+}
+
+/** Créneaux proposés (dernier lot transmis) pour une demande, à présenter au locataire. */
+async function showTenantSlots(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  scheduleRequestId: string,
+  chatId: number | string,
+) {
+  const request = await supabase
+    .from("incident_schedule_requests")
+    .select("id,tenant_profile_id,status")
+    .eq("id", scheduleRequestId)
+    .eq("tenant_profile_id", account.profile_id)
+    .eq("status", "transmis_locataire")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (request.error) throw request.error;
+  if (!request.data) throw new Error("Rendez-vous non autorise ou deja traite.");
+
+  const slots = await supabase
+    .from("incident_schedule_slots")
+    .select("id,starts_at,ends_at")
+    .eq("schedule_request_id", scheduleRequestId)
+    .eq("status", "propose")
+    .is("archived_at", null)
+    .order("starts_at", { ascending: true })
+    .limit(10);
+  if (slots.error) throw slots.error;
+  if (!slots.data?.length) throw new Error("Aucun creneau disponible pour ce rendez-vous.");
+
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    {
+      text: "Choisissez le creneau qui vous convient :",
+      buttons: slots.data.map((slot) => [
+        { text: slotLabel(slot.starts_at, slot.ends_at), callbackData: `tslot:${scheduleRequestId}:${slot.id}` },
+      ]),
+    },
+    chatId,
+  );
+}
+
+/**
+ * Choix d'un créneau par le locataire (équivalent decideSchedule action 'choix_locataire',
+ * exécuté en service role : on vérifie donc explicitement l'appartenance de la demande).
+ */
+async function validateTenantSlot(
+  supabase: AdminClient,
+  account: BotAccount,
+  scheduleRequestId: string,
+  slotId: string,
+) {
+  const request = await supabase
+    .from("incident_schedule_requests")
+    .select("id,organization_id,tenant_profile_id,status")
+    .eq("id", scheduleRequestId)
+    .eq("tenant_profile_id", account.profile_id)
+    .eq("status", "transmis_locataire")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (request.error) throw request.error;
+  if (!request.data) throw new Error("Rendez-vous non autorise ou deja traite.");
+
+  const slot = await supabase
+    .from("incident_schedule_slots")
+    .select("id,starts_at,ends_at")
+    .eq("id", slotId)
+    .eq("schedule_request_id", scheduleRequestId)
+    .eq("status", "propose")
+    .maybeSingle();
+  if (slot.error) throw slot.error;
+  if (!slot.data) throw new Error("Creneau invalide.");
+
+  const latestBatch = await supabase
+    .from("incident_schedule_slot_batches")
+    .select("id")
+    .eq("schedule_request_id", scheduleRequestId)
+    .is("archived_at", null)
+    .order("round_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latestBatch.error) throw latestBatch.error;
+
+  const response = await supabase.from("incident_schedule_responses").insert({
+    organization_id: request.data.organization_id,
+    schedule_request_id: scheduleRequestId,
+    batch_id: latestBatch.data?.id ?? null,
+    slot_id: slotId,
+    actor_profile_id: account.profile_id,
+    actor_role: "locataire",
+    action: "choix_locataire",
+  });
+  if (response.error) throw response.error;
+
+  const [requestUpdate, selectedSlot, otherSlots, batchUpdate] = await Promise.all([
+    supabase
+      .from("incident_schedule_requests")
+      .update({ status: "valide", selected_slot_id: slotId, validated_at: nowIso() })
+      .eq("id", scheduleRequestId),
+    supabase.from("incident_schedule_slots").update({ status: "selectionne" }).eq("id", slotId),
+    supabase
+      .from("incident_schedule_slots")
+      .update({ status: "refuse" })
+      .eq("schedule_request_id", scheduleRequestId)
+      .neq("id", slotId),
+    latestBatch.data
+      ? supabase.from("incident_schedule_slot_batches").update({ status: "acceptee" }).eq("id", latestBatch.data.id)
+      : Promise.resolve({ error: null }),
+  ]);
+  for (const result of [requestUpdate, selectedSlot, otherSlots, batchUpdate]) {
+    if (result.error) throw result.error;
+  }
+  return slotLabel(slot.data.starts_at, slot.data.ends_at);
+}
+
+const interventionStatusLabel: Record<string, string> = {
+  planifiee: "Planifiee",
+  confirmee: "Confirmee",
+  en_cours: "En cours",
+  suspendue: "Suspendue",
+};
+
+// Prochaine action possible par l'artisan selon le statut courant.
+const interventionNextAction: Record<string, { action: string; label: string } | undefined> = {
+  planifiee: { action: "confirmer", label: "Confirmer l intervention" },
+  confirmee: { action: "demarrer", label: "Demarrer l intervention" },
+  en_cours: { action: "terminer", label: "Terminer l intervention" },
+};
+
+/** Interventions actives attribuées à l'artisan. */
+async function showArtisanInterventions(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const interventions = await supabase
+    .from("incident_interventions")
+    .select("id,status,planned_starts_at,incidents(number)")
+    .eq("organization_id", account.organization_id)
+    .eq("artisan_profile_id", account.profile_id)
+    .in("status", ["planifiee", "confirmee", "en_cours", "suspendue"])
+    .is("archived_at", null)
+    .order("planned_starts_at", { ascending: true })
+    .limit(10);
+  if (interventions.error) throw interventions.error;
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    {
+      text: interventions.data?.length
+        ? "Vos interventions en cours :"
+        : "Aucune intervention ne vous est attribuee actuellement.",
+      buttons: (interventions.data ?? []).map((intervention) => {
+        const date = new Date(intervention.planned_starts_at).toLocaleDateString("fr-FR", {
+          day: "2-digit",
+          month: "2-digit",
+        });
+        return [
+          {
+            text: `${intervention.incidents?.[0]?.number ?? "Incident"} - ${date} - ${interventionStatusLabel[intervention.status] ?? intervention.status}`,
+            callbackData: `intervention:${intervention.id}`,
+          },
+        ];
+      }),
+    },
+    chatId,
+  );
+}
+
+/** Détail d'une intervention + prochaine action possible. */
+async function showInterventionActions(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  interventionId: string,
+  chatId: number | string,
+) {
+  const intervention = await supabase
+    .from("incident_interventions")
+    .select("id,status,planned_starts_at,planned_ends_at,work_description,incidents(number)")
+    .eq("id", interventionId)
+    .eq("artisan_profile_id", account.profile_id)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (intervention.error) throw intervention.error;
+  if (!intervention.data) throw new Error("Intervention non autorisee.");
+
+  const next = interventionNextAction[intervention.data.status];
+  const summary = [
+    `Incident ${intervention.data.incidents?.[0]?.number ?? ""}`.trim(),
+    `Statut : ${interventionStatusLabel[intervention.data.status] ?? intervention.data.status}`,
+    `Prevu : ${slotLabel(intervention.data.planned_starts_at, intervention.data.planned_ends_at)}`,
+    intervention.data.work_description ? `Travaux : ${intervention.data.work_description}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    {
+      text: next ? summary : `${summary}\n\nAucune action disponible pour le moment.`,
+      buttons: next ? [[{ text: next.label, callbackData: `intervact:${interventionId}:${next.action}` }]] : undefined,
+    },
+    chatId,
+  );
+}
+
+/** Applique une transition d'intervention par l'artisan (service role → contrôle de propriété). */
+async function transitionArtisanIntervention(
+  supabase: AdminClient,
+  account: BotAccount,
+  interventionId: string,
+  action: string,
+) {
+  const intervention = await supabase
+    .from("incident_interventions")
+    .select("id,status")
+    .eq("id", interventionId)
+    .eq("artisan_profile_id", account.profile_id)
+    .is("archived_at", null)
+    .maybeSingle();
+  if (intervention.error) throw intervention.error;
+  if (!intervention.data) throw new Error("Intervention non autorisee.");
+
+  const expected = interventionNextAction[intervention.data.status];
+  if (!expected || expected.action !== action) throw new Error("Action non disponible pour cette intervention.");
+
+  const values: Record<string, unknown> =
+    action === "confirmer"
+      ? { status: "confirmee" }
+      : action === "demarrer"
+        ? { status: "en_cours", actual_starts_at: nowIso() }
+        : { status: "terminee", actual_ends_at: nowIso() };
+  const { error } = await supabase.from("incident_interventions").update(values).eq("id", interventionId);
+  if (error) throw error;
+  return action;
+}
+
+/** Demandes de devis en attente pour lesquelles l'artisan est destinataire. */
+async function showArtisanQuoteRequests(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const recipients = await supabase
+    .from("incident_quote_recipients")
+    .select("id,quote_request_id,incident_quote_requests(incidents(number))")
+    .eq("organization_id", account.organization_id)
+    .eq("artisan_profile_id", account.profile_id)
+    .eq("status", "demande")
+    .is("archived_at", null)
+    .limit(10);
+  if (recipients.error) throw recipients.error;
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    {
+      text: recipients.data?.length
+        ? "Demandes de devis en attente. Selectionnez-en une pour repondre :"
+        : "Aucune demande de devis en attente.",
+      buttons: (recipients.data ?? []).map((recipient) => {
+        const number = recipient.incident_quote_requests?.[0]?.incidents?.[0]?.number ?? "Incident";
+        return [{ text: `Devis ${number}`, callbackData: `quote:${recipient.id}` }];
+      }),
+    },
+    chatId,
+  );
+}
+
+/** Prépare la saisie du montant du devis (le montant arrive au message suivant). */
+async function startQuoteAnswer(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  recipientId: string,
+  chatId: number | string,
+) {
+  const recipient = await supabase
+    .from("incident_quote_recipients")
+    .select("id,quote_request_id")
+    .eq("id", recipientId)
+    .eq("artisan_profile_id", account.profile_id)
+    .eq("status", "demande")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (recipient.error) throw recipient.error;
+  if (!recipient.data) throw new Error("Demande de devis non autorisee ou deja traitee.");
+
+  const updated = await updateConversation(supabase, conversation, {
+    state: "quote_amount",
+    status: "waiting_user",
+    context: { quoteRecipientId: recipientId, quoteRequestId: recipient.data.quote_request_id },
+  });
+  await sendAndLog(
+    supabase,
+    adapter,
+    updated,
+    { text: "Envoyez le montant TTC de votre devis en euros (par exemple 250 ou 250,50)." },
+    chatId,
+  );
+}
+
+/** Enregistre le devis de l'artisan (insert incident_quotes + destinataire passé à 'recu'). */
+async function submitArtisanQuote(
+  supabase: AdminClient,
+  account: BotAccount,
+  recipientId: string,
+  quoteRequestId: string,
+  amountCents: number,
+) {
+  const recipient = await supabase
+    .from("incident_quote_recipients")
+    .select("id,organization_id,quote_request_id")
+    .eq("id", recipientId)
+    .eq("quote_request_id", quoteRequestId)
+    .eq("artisan_profile_id", account.profile_id)
+    .eq("status", "demande")
+    .is("archived_at", null)
+    .maybeSingle();
+  if (recipient.error) throw recipient.error;
+  if (!recipient.data) throw new Error("Demande de devis non autorisee ou deja traitee.");
+
+  const quote = await supabase.from("incident_quotes").insert({
+    organization_id: recipient.data.organization_id,
+    quote_request_id: quoteRequestId,
+    recipient_id: recipientId,
+    amount_cents: amountCents,
+    currency: "EUR",
+    status: "recu",
+  });
+  if (quote.error) throw quote.error;
+
+  const recipientUpdate = await supabase
+    .from("incident_quote_recipients")
+    .update({ status: "recu", responded_at: nowIso() })
+    .eq("id", recipientId);
+  if (recipientUpdate.error) throw recipientUpdate.error;
+}
+
 export async function processConnectedMessage(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
@@ -1092,6 +1490,32 @@ export async function processConnectedMessage(
     return;
   }
 
+  if (conversation.state === "quote_amount") {
+    const amountCents = parseEurosToCents(text);
+    if (amountCents === null) {
+      await sendAndLog(
+        supabase,
+        adapter,
+        conversation,
+        { text: "Montant non compris. Envoyez un nombre en euros, par exemple 250 ou 250,50." },
+        replyTarget,
+      );
+      return;
+    }
+    const recipientId = String(conversation.context.quoteRecipientId ?? "");
+    const quoteRequestId = String(conversation.context.quoteRequestId ?? "");
+    await submitArtisanQuote(supabase, account, recipientId, quoteRequestId, amountCents);
+    conversation = await updateConversation(supabase, conversation, { state: "idle", status: "active", context: {} });
+    await sendAndLog(
+      supabase,
+      adapter,
+      conversation,
+      { text: `Votre devis de ${euros(amountCents)} a bien ete transmis au responsable. Merci !` },
+      replyTarget,
+    );
+    return;
+  }
+
   const classification = classifyMessage(text);
   if (classification.intent === "declarer_incident") {
     conversation = await updateConversation(supabase, conversation, {
@@ -1156,14 +1580,40 @@ export async function processCallback(
     await showOwnerIncidents(supabase, adapter, account, conversation, chatId);
   } else if (data === "menu_owner_echeances") {
     await showOwnerEcheances(supabase, adapter, account, conversation, chatId);
-  } else if (data === "menu_interventions") {
+  } else if (data === "menu_tenant_schedule") {
+    await showTenantSchedules(supabase, adapter, account, conversation, chatId);
+  } else if (data.startsWith("tschedule:")) {
+    await showTenantSlots(supabase, adapter, account, conversation, data.slice(10), chatId);
+  } else if (data.startsWith("tslot:")) {
+    const [, scheduleRequestId, slotId] = data.split(":");
+    const label = await validateTenantSlot(supabase, account, scheduleRequestId, slotId);
     await sendAndLog(
       supabase,
       adapter,
       conversation,
-      { text: "Consultez uniquement les interventions qui vous sont attribuees dans GERIMMO." },
+      {
+        text: `Votre rendez-vous est confirme pour le creneau ${label}. L artisan et le responsable en sont informes.`,
+      },
       chatId,
     );
+  } else if (data === "menu_quotes") {
+    await showArtisanQuoteRequests(supabase, adapter, account, conversation, chatId);
+  } else if (data.startsWith("quote:")) {
+    await startQuoteAnswer(supabase, adapter, account, conversation, data.slice(6), chatId);
+  } else if (data === "menu_interventions") {
+    await showArtisanInterventions(supabase, adapter, account, conversation, chatId);
+  } else if (data.startsWith("intervention:")) {
+    await showInterventionActions(supabase, adapter, account, conversation, data.slice(13), chatId);
+  } else if (data.startsWith("intervact:")) {
+    const [, interventionId, action] = data.split(":");
+    const applied = await transitionArtisanIntervention(supabase, account, interventionId, action);
+    const message =
+      applied === "confirmer"
+        ? "Intervention confirmee. Le responsable et le locataire en sont informes."
+        : applied === "demarrer"
+          ? "Intervention demarree. Pensez a la marquer terminee une fois le travail acheve."
+          : "Intervention terminee. Merci ! Le responsable va verifier et cloturer le dossier.";
+    await sendAndLog(supabase, adapter, conversation, { text: message }, chatId);
   } else if (data === "menu_help") {
     await sendAndLog(supabase, adapter, conversation, roleMenu(role), chatId);
   } else if (data.startsWith("home:")) {

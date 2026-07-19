@@ -3,6 +3,7 @@ import {
   allowedTenantDocumentTypes,
   classifyMessage,
   parseAvailabilitySlots,
+  parseEurosToCents,
 } from "../src/services/bot/message-understanding.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -45,6 +46,15 @@ test("limite les documents locataire aux types autorises", () => {
   assert.equal(allowedTenantDocumentTypes.has("contrat"), true);
   assert.equal(allowedTenantDocumentTypes.has("devis"), false);
   assert.equal(allowedTenantDocumentTypes.has("rapport_incident"), false);
+});
+
+test("analyse un montant de devis en euros vers des centimes", () => {
+  assert.equal(parseEurosToCents("250"), 25000);
+  assert.equal(parseEurosToCents("250,50"), 25050);
+  assert.equal(parseEurosToCents("250.5"), 25050);
+  assert.equal(parseEurosToCents("1 200 €"), 120000);
+  assert.equal(parseEurosToCents("abc"), null);
+  assert.equal(parseEurosToCents("12,345"), null);
 });
 
 test("impose GERIMMO aux artisans", () => {
