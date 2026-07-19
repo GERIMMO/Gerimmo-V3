@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Check, RefreshCw, X } from "lucide-react";
+import { Check, FileCheck2, RefreshCw, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,7 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
   const [periods, setPeriods] = useState(initialPeriods);
   const [pending, setPending] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [validating, setValidating] = useState<string | null>(null);
 
   async function refresh() {
     const response = await fetch("/api/rent");
@@ -75,7 +76,27 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
     setPeriods((current) =>
       current.map((period) => (period.id === periodId ? { ...period, status: received ? "recu" : "impaye" } : period)),
     );
-    toast.success(received ? "Loyer marqué reçu — quittance à préparer." : "Loyer marqué impayé — relance à envoyer.");
+    toast.success(received ? "Loyer marqué reçu — quittance à valider." : "Loyer marqué impayé — relance à envoyer.");
+    await refresh();
+  }
+
+  async function validateQuittance(periodId: string) {
+    setValidating(periodId);
+    const response = await fetch("/api/rent/quittance", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ periodId }),
+    });
+    setValidating(null);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      return toast.error(body.message ?? "Validation impossible.");
+    }
+    const { quittance_status, emailed } = (await response.json()) as { quittance_status: string; emailed: boolean };
+    setPeriods((current) =>
+      current.map((period) => (period.id === periodId ? { ...period, quittance_status } : period)),
+    );
+    toast.success(emailed ? "Quittance validée et envoyée au locataire." : "Quittance validée et disponible.");
   }
 
   const counts = {
@@ -119,6 +140,7 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
               <TableHead>Échéance</TableHead>
               <TableHead>Montant</TableHead>
               <TableHead>Statut</TableHead>
+              <TableHead>Quittance</TableHead>
               <TableHead className="text-right">Loyer reçu ?</TableHead>
             </TableRow>
           </TableHeader>
@@ -134,6 +156,26 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
                 <TableCell>{euros(period.amount_cents)}</TableCell>
                 <TableCell>
                   <Badge variant={statusVariant[period.status]}>{statusLabel[period.status]}</Badge>
+                </TableCell>
+                <TableCell>
+                  {period.quittance_status === "a_valider" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={validating === period.id}
+                      onClick={() => validateQuittance(period.id)}
+                    >
+                      <FileCheck2 data-icon="inline-start" />
+                      Valider
+                    </Button>
+                  ) : period.quittance_status === "validee" ? (
+                    <Badge variant="secondary">Validée</Badge>
+                  ) : period.quittance_status === "envoyee" ? (
+                    <Badge variant="default">Envoyée</Badge>
+                  ) : (
+                    <span className="text-muted-foreground text-sm">—</span>
+                  )}
                 </TableCell>
                 <TableCell className="text-right">
                   {period.status === "attendu" ? (

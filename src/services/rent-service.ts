@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 
+type UserClient = Awaited<ReturnType<typeof createClient>>;
+
 export type RentPeriodStatus = "attendu" | "recu" | "impaye" | "mise_en_demeure" | "annule";
 
 export type RentPeriodRow = {
@@ -82,7 +84,21 @@ export async function listRentPeriods(): Promise<RentPeriodRow[]> {
   });
 }
 
-/** Confirme (ou non) la réception d'un loyer. reçu → 'recu' ; non reçu → 'impaye'. */
+type ConfirmedPeriod = {
+  id: string;
+  organization_id: string;
+  bien_id: string;
+  tenant_profile_id: string | null;
+  tenant_name: string | null;
+  amount_cents: number;
+  period_month: string;
+  status: RentPeriodStatus;
+};
+
+/**
+ * Confirme (ou non) la réception d'un loyer. reçu → 'recu' + génération de la quittance
+ * (brouillon, à valider) ; non reçu → 'impaye' (entre dans le cycle de relances).
+ */
 export async function confirmRent(input: { periodId: string; received: boolean }) {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
@@ -97,10 +113,122 @@ export async function confirmRent(input: { periodId: string; received: boolean }
     } as never)
     .eq("id", input.periodId)
     .eq("status", "attendu")
-    .select("id,status")
+    .select("id,organization_id,bien_id,tenant_profile_id,tenant_name,amount_cents,period_month,status")
     .single();
   if (error) throw error;
-  return data as unknown as { id: string; status: RentPeriodStatus };
+  const period = data as unknown as ConfirmedPeriod;
+
+  if (input.received) {
+    await generateQuittanceForPeriod(supabase, period);
+  }
+  return { id: period.id, status: period.status };
+}
+
+function monthLabel(periodMonth: string) {
+  return new Date(periodMonth).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+}
+
+/**
+ * Crée la quittance (document type 'quittance', visible locataire, en brouillon) et la relie
+ * à la période. Créée sous le compte du gestionnaire (RLS can_manage_documents couvre admin,
+ * agent et propriétaire). La quittance devra être validée humainement.
+ */
+async function generateQuittanceForPeriod(supabase: UserClient, period: ConfirmedPeriod) {
+  const document = await supabase
+    .from("documents")
+    .insert({
+      organization_id: period.organization_id,
+      bien_id: period.bien_id,
+      tenant_profile_id: period.tenant_profile_id,
+      title: `Quittance de loyer - ${monthLabel(period.period_month)}`,
+      reference: `QUIT-${period.period_month.replace(/-/g, "").slice(0, 6)}-${period.id.slice(0, 8)}`,
+      document_type: "quittance",
+      status: "brouillon",
+      visibility: "locataire",
+      mime_type: "application/pdf",
+      metadata: {
+        rent_period_id: period.id,
+        amount_cents: period.amount_cents,
+        period_month: period.period_month,
+        tenant_name: period.tenant_name,
+      },
+    } as never)
+    .select("id")
+    .single();
+  if (document.error) throw document.error;
+  const documentId = (document.data as unknown as { id: string }).id;
+
+  const linked = await supabase
+    .from("rent_periods" as never)
+    .update({ quittance_document_id: documentId, quittance_status: "a_valider", updated_at: nowIso() } as never)
+    .eq("id", period.id);
+  if (linked.error) throw linked.error;
+}
+
+/**
+ * Valide la quittance : rend le document actif (visible au locataire) et prépare l'envoi e-mail
+ * (file document_email_outbox, consommée par n8n). 'envoyee' si un e-mail a pu être mis en file,
+ * sinon 'validee' (document tout de même disponible).
+ */
+export async function validateQuittance(input: { periodId: string }) {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("Authentification requise.");
+
+  const periodResult = await supabase
+    .from("rent_periods" as never)
+    .select("id,organization_id,tenant_profile_id,quittance_document_id,quittance_status,period_month")
+    .eq("id", input.periodId)
+    .maybeSingle();
+  if (periodResult.error) throw periodResult.error;
+  const period = periodResult.data as unknown as {
+    id: string;
+    organization_id: string;
+    tenant_profile_id: string | null;
+    quittance_document_id: string | null;
+    quittance_status: string;
+    period_month: string;
+  } | null;
+  if (!period || period.quittance_status !== "a_valider" || !period.quittance_document_id) {
+    throw new Error("Aucune quittance à valider pour ce loyer.");
+  }
+
+  const documentUpdate = await supabase
+    .from("documents")
+    .update({ status: "actif" } as never)
+    .eq("id", period.quittance_document_id);
+  if (documentUpdate.error) throw documentUpdate.error;
+
+  let emailed = false;
+  if (period.tenant_profile_id) {
+    const profile = await supabase.from("profiles").select("email").eq("id", period.tenant_profile_id).maybeSingle();
+    const email = profile.data?.email as string | null | undefined;
+    if (email) {
+      const outbox = await supabase.from("document_email_outbox").insert({
+        organization_id: period.organization_id,
+        document_id: period.quittance_document_id,
+        recipient_email: email,
+        subject: `Votre quittance de loyer - ${monthLabel(period.period_month)}`,
+        body: "Bonjour,\n\nVeuillez trouver votre quittance de loyer. Elle est aussi disponible dans votre espace GERIMMO.",
+        status: "pret",
+      } as never);
+      if (outbox.error) throw outbox.error;
+      emailed = true;
+    }
+  }
+
+  const finalStatus = emailed ? "envoyee" : "validee";
+  const periodUpdate = await supabase
+    .from("rent_periods" as never)
+    .update({
+      quittance_status: finalStatus,
+      quittance_validated_by: auth.user.id,
+      quittance_validated_at: nowIso(),
+      updated_at: nowIso(),
+    } as never)
+    .eq("id", input.periodId);
+  if (periodUpdate.error) throw periodUpdate.error;
+  return { periodId: input.periodId, quittance_status: finalStatus, emailed };
 }
 
 /**
