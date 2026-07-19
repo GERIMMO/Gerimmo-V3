@@ -9,12 +9,10 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
  * Nécessite E2E_USER_EMAIL / E2E_USER_PASSWORD (compte gestionnaire avec au moins un bien).
  * Fixture attendu : un bien de référence "E2E-BIEN-01" dans l'org du compte E2E.
  *
- * ⚠️ BUG CONNU révélé par ce test (2026-07-19) : la création d'incident par un utilisateur
- * NON super-admin échoue en production (HTTP 500). Les logs Postgres montrent une violation
- * RLS sur `observability_events` (policy insert = `profile_id = auth.uid() OR profile_id IS NULL`),
- * écrite par l'instrumentation applicative — elle masque probablement l'erreur primaire de
- * createIncident. À corriger avant que ce test passe au vert. Il ne s'exécute qu'avec des
- * identifiants E2E (donc ignoré en CI standard).
+ * Ce test a révélé (et validé la correction de) un bug de production : la création ET
+ * l'archivage d'incident échouaient pour tout utilisateur non super-admin, car la policy
+ * SELECT des incidents re-interrogeait la table (invisible pendant un INSERT/UPDATE ...
+ * RETURNING). Voir la migration 20260719130000_fix_incidents_select_policy.
  */
 test("parcours métier : créer, retrouver et archiver un incident", async ({ page }) => {
   test.skip(!E2E_EMAIL || !E2E_PASSWORD, "Identifiants E2E requis (E2E_USER_EMAIL / E2E_USER_PASSWORD).");
