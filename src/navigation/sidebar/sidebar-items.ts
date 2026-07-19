@@ -7,10 +7,12 @@ import {
   CreditCard,
   Database,
   File,
+  FileClock,
   LayoutDashboard,
   ListChecks,
   type LucideIcon,
   MessageSquare,
+  Receipt,
   Settings,
   Users,
 } from "lucide-react";
@@ -86,6 +88,12 @@ export const sidebarItems: NavGroup[] = [
         icon: Building2,
       },
       {
+        id: "loyers",
+        title: "Loyers",
+        url: "/dashboard/loyers",
+        icon: Receipt,
+      },
+      {
         id: "utilisateurs",
         title: "Utilisateurs",
         url: "/dashboard/utilisateurs",
@@ -114,6 +122,12 @@ export const sidebarItems: NavGroup[] = [
         title: "Documents",
         url: "/dashboard/documents",
         icon: File,
+      },
+      {
+        id: "documents-echeances",
+        title: "Échéances docs",
+        url: "/dashboard/documents-echeances",
+        icon: FileClock,
       },
       {
         id: "echanges",

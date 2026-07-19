@@ -65,3 +65,12 @@ export function parseAvailabilitySlots(input: string) {
 }
 
 export const allowedTenantDocumentTypes = new Set(["contrat", "attestation", "quittance", "autre"]);
+
+/** Convertit un montant saisi en euros (« 250 », « 250,50 », « 250.5 € ») en centimes ; null si invalide. */
+export function parseEurosToCents(input: string): number | null {
+  const match = input.replace(/\s|€|eur/gi, "").match(/^(\d+)(?:[.,](\d{1,2}))?$/);
+  if (!match) return null;
+  const euros = Number(match[1]);
+  const cents = match[2] ? Number(match[2].padEnd(2, "0")) : 0;
+  return euros * 100 + cents;
+}

@@ -50,6 +50,33 @@ Côté **n8n** :
 - `N8N_BUSINESS_WEBHOOK_SECRET` — même valeur que côté app.
 - `EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM`.
 
+## Workflows loyers / quittances / rappels documents (bloc 4 — ajouté 2026-07-19)
+
+Même modèle « tirage » et même secret (`x-gerimmo-automation-secret` = `N8N_BUSINESS_WEBHOOK_SECRET`).
+Endpoint dédié : **`POST /api/automations/rent`**. Toute la logique métier reste côté GERIMMO
+(fonctions SQL) ; n8n déclenche et envoie les e-mails.
+
+Actions supportées :
+
+| Corps | Effet | Réponse |
+|---|---|---|
+| `{ "action": "generate_rent_periods" }` (option. `"month": "YYYY-MM-01"`) | RPC `generate_rent_periods_for_month` : crée les loyers du mois pour toutes les locations actives (idempotent). | `{ created: <n> }` |
+| `{ "action": "queue_document_reminders" }` | RPC `queue_document_expiry_reminders` : met en file les rappels des documents officiels arrivant à échéance (anti-doublon 30 j). | `{ queued: <n> }` |
+| corps vide | Renvoie jusqu'à 50 e-mails `pret` de `document_email_outbox` (quittances, relances, mises en demeure, rappels documents). | `{ emails: [...] }` |
+| `{ "action": "mark_email_sent", "outboxId": "…" }` | Marque la ligne d'outbox `envoye` (+ `sent_at`). | `{ acknowledged: true }` |
+
+Planification n8n recommandée :
+- **Mensuel (ex. le 1er)** : `generate_rent_periods` — génère les échéances de loyer du mois.
+- **Quotidien** : `queue_document_reminders` — rappels d'échéance documents.
+- **Toutes les X minutes** : tirer les e-mails `pret`, les envoyer via le fournisseur, puis `mark_email_sent`.
+
+Contrat de la file e-mails (`document_email_outbox`) : l'app écrit des lignes `status='pret'` (quittances validées,
+relances/mises en demeure, rappels documents). n8n les envoie et repasse chaque ligne à `envoye` via `mark_email_sent`.
+Les statuts `erreur`/`archive` existent aussi (voir contrainte `document_email_status_valid`).
+
+⚠️ La question WhatsApp « loyer reçu ? » posée au gestionnaire (agent/propriétaire selon `organizations.organization_type`)
+et les notifications spontanées nécessitent des **templates Meta approuvés** (message hors fenêtre 24 h) — à faire avant activation.
+
 ## Checklist d'activation (le jour venu)
 
 1. [ ] Stripe configuré et webhooks branchés (les `automation_events` se remplissent).
@@ -60,3 +87,5 @@ Côté **n8n** :
 6. [ ] Renseigner les variables n8n (`GERIMMO_API_URL`, secret, e-mail).
 7. [ ] Tester un événement de bout en bout, puis passer les workflows en `active: true`.
 8. [ ] Surveiller `automation_events.status` (`failed`) et la table `business_email_outbox`.
+9. [ ] Bloc 4 : créer les 3 planifications n8n sur `POST /api/automations/rent` (générer loyers mensuels,
+       rappels documents quotidiens, envoi des e-mails `document_email_outbox`). Le service d'e-mails doit être configuré.
