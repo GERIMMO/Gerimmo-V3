@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Bot, Building2, FileText, Palette } from "lucide-react";
+import { Bot, Building2, FileText, MessageCircle, Palette } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -17,6 +17,12 @@ export default function Page() {
       description: "Accueil, signature et horaires du bot.",
       href: "/dashboard/parametres/telegram",
       icon: Bot,
+    },
+    {
+      title: "WhatsApp",
+      description: "Liaison des comptes et suivi du bot WhatsApp.",
+      href: "/dashboard/parametres/whatsapp",
+      icon: MessageCircle,
     },
     {
       title: "Documents officiels",

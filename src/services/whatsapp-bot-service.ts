@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient as createUserClient } from "@/lib/supabase/server";
 import { resolveBotBrandIdentity } from "@/services/bot/branding";
 import { WhatsAppAdapter } from "@/services/bot/whatsapp-adapter";
 import { parseWhatsAppEvents, type WhatsAppEvent } from "@/services/bot/whatsapp-parse";
@@ -10,9 +11,14 @@ import {
   roleMenu,
   sendAndLog,
 } from "@/services/telegram-bot-service";
-import type { BotAccount, BotIncomingMessage, WhatsAppWebhookPayload } from "@/types/telegram-bot";
+import type {
+  BotAccount,
+  BotIncomingMessage,
+  GenerateTelegramInvitationInput,
+  WhatsAppWebhookPayload,
+} from "@/types/telegram-bot";
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -31,6 +37,96 @@ type WhatsAppAccountRow = {
   organization_id: string;
   profile_id: string;
 };
+
+export type WhatsAppSettingsPayload = {
+  accounts: Array<Record<string, unknown>>;
+  invitations: Array<Record<string, unknown>>;
+  members: Array<{
+    organization_id: string;
+    profile_id: string;
+    member_type: string;
+    full_name: string | null;
+    email: string | null;
+    organization_name: string | null;
+  }>;
+  botNumber: string | null;
+};
+
+/**
+ * Génère une invitation de liaison WhatsApp (même table que Telegram, channel = whatsapp).
+ * Le lien wa.me ouvre WhatsApp avec le code pré-rempli : le membre n'a qu'à l'envoyer au bot.
+ * RLS : réservé aux profils avec can_manage_users sur l'organisation.
+ */
+export async function generateWhatsAppInvitation(input: GenerateTelegramInvitationInput) {
+  const supabase = await createUserClient();
+  const token = randomBytes(32).toString("base64url");
+  const expiresAt = new Date(Date.now() + (input.expiresInMinutes ?? 30) * 60_000).toISOString();
+
+  const { data, error } = await supabase
+    .from("telegram_link_invitations" as never)
+    .insert({
+      organization_id: input.organization_id,
+      profile_id: input.profile_id,
+      token_hash: hash(token),
+      expires_at: expiresAt,
+      channel: "whatsapp",
+    } as never)
+    .select("id,organization_id,profile_id,status,expires_at,created_at")
+    .single();
+  if (error) throw error;
+
+  const botNumber = process.env.WHATSAPP_BOT_NUMBER;
+  return {
+    invitation: data,
+    waLink: botNumber ? `https://wa.me/${botNumber}?text=${encodeURIComponent(token)}` : null,
+    token,
+  };
+}
+
+/** Données de la page réglages WhatsApp (lues sous RLS : chacun ne voit que son périmètre). */
+export async function listWhatsAppSettingsData(): Promise<WhatsAppSettingsPayload> {
+  const supabase = await createUserClient();
+  const [accounts, invitations, members] = await Promise.all([
+    supabase
+      .from("whatsapp_accounts" as never)
+      .select("id,organization_id,profile_id,wa_id,display_name,status,linked_at,last_activity_at")
+      .order("linked_at", { ascending: false })
+      .limit(200),
+    supabase
+      .from("telegram_link_invitations" as never)
+      .select("id,organization_id,profile_id,status,expires_at,created_at")
+      .eq("channel", "whatsapp")
+      .order("created_at", { ascending: false })
+      .limit(100),
+    supabase
+      .from("organization_members")
+      .select("organization_id,profile_id,member_type,profiles(full_name,email),organizations(name)")
+      .eq("status", "active")
+      .is("archived_at", null)
+      .limit(500),
+  ]);
+  for (const result of [accounts, invitations, members]) {
+    if (result.error) throw result.error;
+  }
+
+  return {
+    accounts: (accounts.data ?? []) as Array<Record<string, unknown>>,
+    invitations: (invitations.data ?? []) as Array<Record<string, unknown>>,
+    members: (members.data ?? []).map((member) => {
+      const profile = member.profiles as { full_name?: string | null; email?: string | null } | null;
+      const organization = member.organizations as { name?: string | null } | null;
+      return {
+        organization_id: member.organization_id,
+        profile_id: member.profile_id,
+        member_type: member.member_type,
+        full_name: profile?.full_name ?? null,
+        email: profile?.email ?? null,
+        organization_name: organization?.name ?? null,
+      };
+    }),
+    botNumber: process.env.WHATSAPP_BOT_NUMBER ?? null,
+  };
+}
 
 /**
  * Point d'entrée WhatsApp : sécurité (faite au webhook), anti-doublon par wamid,
