@@ -1,5 +1,9 @@
-import { ModulePlaceholder } from "../_components/module-placeholder";
+import { requireUser } from "@/lib/auth/guards";
+import { getReportsData } from "@/services/reports-service";
 
-export default function Page() {
-  return <ModulePlaceholder title="Rapports" />;
+import { RapportsModule } from "./_components/rapports-module";
+
+export default async function Page() {
+  await requireUser("/auth/v1/login");
+  return <RapportsModule data={await getReportsData()} />;
 }
