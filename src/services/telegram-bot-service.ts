@@ -305,6 +305,17 @@ export function roleMenu(role: string) {
       ],
     };
   }
+  if (role === "proprietaire") {
+    return {
+      text: "Que souhaitez-vous faire ?",
+      buttons: [
+        [{ text: "Mes biens", callbackData: "menu_owner_biens" }],
+        [{ text: "Incidents de mes biens", callbackData: "menu_owner_incidents" }],
+        [{ text: "Mes echeances", callbackData: "menu_owner_echeances" }],
+        [{ text: "Aide", callbackData: "menu_help" }],
+      ],
+    };
+  }
   return {
     text: "Que souhaitez-vous faire ?",
     buttons: [
@@ -397,6 +408,122 @@ async function listHomes(supabase: AdminClient, account: Pick<BotAccount, "organ
     address_line1: string | null;
     city: string | null;
   }>;
+}
+
+type OwnerBien = {
+  id: string;
+  name: string;
+  reference: string;
+  city: string | null;
+  monthly_rent_cents: number | null;
+};
+
+/** Biens détenus par un propriétaire (occupant_type = 'proprietaire'). */
+async function listOwnerBiens(
+  supabase: AdminClient,
+  account: Pick<BotAccount, "organization_id" | "profile_id">,
+): Promise<OwnerBien[]> {
+  const { data, error } = await supabase
+    .from("bien_occupants")
+    .select("biens(id,name,reference,city,monthly_rent_cents)")
+    .eq("profile_id", account.profile_id)
+    .eq("organization_id", account.organization_id)
+    .eq("occupant_type", "proprietaire")
+    .is("archived_at", null)
+    .is("ended_at", null);
+  if (error) throw error;
+  return (data ?? []).flatMap((item) => item.biens ?? []).filter(Boolean) as OwnerBien[];
+}
+
+function euros(cents: number | null | undefined) {
+  return `${((cents ?? 0) / 100).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} €`;
+}
+
+async function showOwnerBiens(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const biens = await listOwnerBiens(supabase, account);
+  const lines = biens.map(
+    (bien) =>
+      `${bien.reference} - ${bien.name}${bien.city ? ` (${bien.city})` : ""} - loyer ${euros(bien.monthly_rent_cents)}`,
+  );
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    { text: lines.length ? `Vos biens :\n${lines.join("\n")}` : "Aucun bien n est rattache a votre profil." },
+    chatId,
+  );
+}
+
+async function showOwnerIncidents(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const biens = await listOwnerBiens(supabase, account);
+  const bienIds = biens.map((bien) => bien.id);
+  const incidents = bienIds.length
+    ? await supabase
+        .from("incidents")
+        .select("number,status,updated_at,bien_id")
+        .in("bien_id", bienIds)
+        .is("archived_at", null)
+        .order("updated_at", { ascending: false })
+        .limit(15)
+    : { data: [], error: null };
+  if (incidents.error) throw incidents.error;
+  const byBien = new Map(biens.map((bien) => [bien.id, bien.reference]));
+  const lines = (incidents.data ?? []).map(
+    (incident) => `${incident.number} - ${byBien.get(incident.bien_id) ?? "bien"} - ${incident.status}`,
+  );
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    { text: lines.length ? `Incidents de vos biens :\n${lines.join("\n")}` : "Aucun incident sur vos biens." },
+    chatId,
+  );
+}
+
+async function showOwnerEcheances(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const biens = await listOwnerBiens(supabase, account);
+  const bienIds = biens.map((bien) => bien.id);
+  const echeances = bienIds.length
+    ? await supabase
+        .from("bien_echeances")
+        .select("title,due_date,status,amount_cents,bien_id")
+        .in("bien_id", bienIds)
+        .in("status", ["a_prevoir", "en_cours"])
+        .is("archived_at", null)
+        .order("due_date", { ascending: true })
+        .limit(15)
+    : { data: [], error: null };
+  if (echeances.error) throw echeances.error;
+  const byBien = new Map(biens.map((bien) => [bien.id, bien.reference]));
+  const lines = (echeances.data ?? []).map(
+    (echeance) =>
+      `${echeance.due_date} - ${byBien.get(echeance.bien_id) ?? "bien"} - ${echeance.title}${echeance.amount_cents ? ` (${euros(echeance.amount_cents)})` : ""}`,
+  );
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    { text: lines.length ? `Vos echeances a venir :\n${lines.join("\n")}` : "Aucune echeance a venir." },
+    chatId,
+  );
 }
 
 async function showIncidentSummary(
@@ -1023,6 +1150,12 @@ export async function processCallback(
     await showDocuments(supabase, adapter, account, conversation, chatId);
   } else if (data === "menu_schedule") {
     await showSchedules(supabase, adapter, account, conversation, chatId);
+  } else if (data === "menu_owner_biens") {
+    await showOwnerBiens(supabase, adapter, account, conversation, chatId);
+  } else if (data === "menu_owner_incidents") {
+    await showOwnerIncidents(supabase, adapter, account, conversation, chatId);
+  } else if (data === "menu_owner_echeances") {
+    await showOwnerEcheances(supabase, adapter, account, conversation, chatId);
   } else if (data === "menu_interventions") {
     await sendAndLog(
       supabase,
