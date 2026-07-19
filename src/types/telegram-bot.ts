@@ -74,7 +74,8 @@ export type BotConversation = {
   id: string;
   organization_id: string;
   profile_id: string;
-  telegram_account_id: string;
+  telegram_account_id: string | null;
+  whatsapp_account_id: string | null;
   bien_id: string | null;
   incident_id: string | null;
   role_key: string | null;
@@ -93,6 +94,38 @@ export type TelegramAccount = {
   telegram_user_id: number;
   telegram_chat_id: number;
   status: "connected" | "revoked" | "suspended" | "archived";
+};
+
+/**
+ * Compte neutre vis-à-vis du canal : le cœur du bot ne manipule que cette forme.
+ * `replyTarget` est la cible de réponse (chat id Telegram numérique ou wa_id WhatsApp).
+ */
+export type BotAccount = {
+  id: string;
+  channel: BotChannel;
+  organization_id: string;
+  profile_id: string;
+  replyTarget: number | string;
+};
+
+export type BotIncomingAttachment = {
+  kind: "photo" | "document";
+  fileId: string;
+  fileUniqueId: string;
+  fileName: string | null;
+  /** Type MIME déclaré par le canal ; null si inconnu avant téléchargement. */
+  mimeType: string | null;
+  /** Taille déclarée en octets ; null si inconnue avant téléchargement. */
+  fileSize: number | null;
+};
+
+/** Message entrant normalisé, indépendant du canal (Telegram ou WhatsApp). */
+export type BotIncomingMessage = {
+  externalMessageId: number | string;
+  text: string | null;
+  caption: string | null;
+  attachment: BotIncomingAttachment | null;
+  metadata?: Record<string, unknown>;
 };
 
 export type BotOutgoingMessage = {

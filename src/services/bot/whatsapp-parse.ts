@@ -44,7 +44,13 @@ export type WhatsAppEvent = {
   text: string | null;
   /** Identifiant du bouton/ligne choisi (équivalent du callbackData Telegram). */
   callbackData: string | null;
-  media: { id: string; kind: "image" | "document"; caption: string | null } | null;
+  media: {
+    id: string;
+    kind: "image" | "document";
+    caption: string | null;
+    mimeType: string | null;
+    fileName: string | null;
+  } | null;
 };
 
 function normalizeMessage(message: WhatsAppInboundMessage, contactName: string | null): WhatsAppEvent {
@@ -87,7 +93,13 @@ function normalizeMessage(message: WhatsAppInboundMessage, contactName: string |
       kind: "media",
       text: message.image.caption ?? null,
       callbackData: null,
-      media: { id: message.image.id, kind: "image", caption: message.image.caption ?? null },
+      media: {
+        id: message.image.id,
+        kind: "image",
+        caption: message.image.caption ?? null,
+        mimeType: message.image.mime_type ?? null,
+        fileName: null,
+      },
     };
   }
 
@@ -97,7 +109,13 @@ function normalizeMessage(message: WhatsAppInboundMessage, contactName: string |
       kind: "media",
       text: message.document.caption ?? null,
       callbackData: null,
-      media: { id: message.document.id, kind: "document", caption: message.document.caption ?? null },
+      media: {
+        id: message.document.id,
+        kind: "document",
+        caption: message.document.caption ?? null,
+        mimeType: message.document.mime_type ?? null,
+        fileName: message.document.filename ?? null,
+      },
     };
   }
 

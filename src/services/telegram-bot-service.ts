@@ -10,8 +10,10 @@ import {
 } from "@/services/bot/message-understanding";
 import { TelegramAdapter } from "@/services/bot/telegram-adapter";
 import type {
+  BotAccount,
   BotAdminPayload,
   BotConversation,
+  BotIncomingMessage,
   BotOutgoingMessage,
   GenerateTelegramInvitationInput,
   TelegramAccount,
@@ -125,18 +127,35 @@ export async function retryBotError(errorId: string) {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-async function sendAndLog(
+function channelLabel(channel: BotChannelAdapter["channel"]) {
+  return channel === "whatsapp" ? "WhatsApp" : "Telegram";
+}
+
+/** Colonne de rattachement du compte dans bot_conversations selon le canal. */
+function accountColumn(channel: BotAccount["channel"]) {
+  return channel === "whatsapp" ? "whatsapp_account_id" : "telegram_account_id";
+}
+
+/** Réparti l'identifiant de message externe sur la bonne colonne (bigint Telegram / texte sinon). */
+function externalIdColumns(externalMessageId: number | string) {
+  return typeof externalMessageId === "number"
+    ? { telegram_message_id: externalMessageId }
+    : { external_message_id: externalMessageId };
+}
+
+export async function sendAndLog(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
   conversation: BotConversation,
-  message: Omit<BotOutgoingMessage, "chatId"> & { chatId?: number },
-  chatId: number,
+  message: Omit<BotOutgoingMessage, "chatId"> & { chatId?: number | string },
+  chatId: number | string,
 ) {
   const identity = await resolveBotBrandIdentity(supabase, conversation.organization_id, conversation.role_key);
   const brandedMessage = { ...message, text: applyBrandIdentity(message.text, identity) };
   const queued = await supabase
     .from("bot_messages")
     .insert({
+      channel: adapter.channel,
       organization_id: conversation.organization_id,
       conversation_id: conversation.id,
       profile_id: conversation.profile_id,
@@ -154,7 +173,7 @@ async function sendAndLog(
     const sent = await adapter.sendMessage({ ...brandedMessage, chatId: message.chatId ?? chatId });
     await supabase
       .from("bot_messages")
-      .update({ status: "sent", telegram_message_id: sent.externalMessageId })
+      .update({ status: "sent", ...externalIdColumns(sent.externalMessageId) })
       .eq("id", queued.data.id);
   } catch (error) {
     await Promise.all([
@@ -164,8 +183,8 @@ async function sendAndLog(
         conversation_id: conversation.id,
         message_id: queued.data.id,
         profile_id: conversation.profile_id,
-        error_code: "TELEGRAM_SEND_FAILED",
-        safe_message: "Le message Telegram n a pas pu etre envoye.",
+        error_code: `${adapter.channel.toUpperCase()}_SEND_FAILED`,
+        safe_message: `Le message ${channelLabel(adapter.channel)} n a pas pu etre envoye.`,
         internal_details: { message: safeError(error) },
       }),
     ]);
@@ -200,7 +219,40 @@ async function findAccount(supabase: AdminClient, telegramUserId: number) {
   return data as TelegramAccount | null;
 }
 
-async function findRole(supabase: AdminClient, account: TelegramAccount) {
+function toBotAccount(account: TelegramAccount, replyTarget: number): BotAccount {
+  return {
+    id: account.id,
+    channel: "telegram",
+    organization_id: account.organization_id,
+    profile_id: account.profile_id,
+    replyTarget,
+  };
+}
+
+/** Normalise un message Telegram vers la forme neutre partagée avec WhatsApp. */
+function toIncomingMessage(message: TelegramMessage, updateId: number): BotIncomingMessage {
+  const photo = message.photo?.[message.photo.length - 1];
+  const document = message.document;
+  const file = photo ?? document;
+  return {
+    externalMessageId: message.message_id,
+    text: message.text ?? null,
+    caption: message.caption ?? null,
+    attachment: file
+      ? {
+          kind: photo ? "photo" : "document",
+          fileId: file.file_id,
+          fileUniqueId: file.file_unique_id,
+          fileName: document?.file_name ?? null,
+          mimeType: document?.mime_type ?? (photo ? "image/jpeg" : null),
+          fileSize: file.file_size ?? null,
+        }
+      : null,
+    metadata: { update_id: updateId },
+  };
+}
+
+export async function findRole(supabase: AdminClient, account: Pick<BotAccount, "organization_id" | "profile_id">) {
   const { data } = await supabase
     .from("organization_members")
     .select("member_type,member_role_assignments(roles(key))")
@@ -213,11 +265,11 @@ async function findRole(supabase: AdminClient, account: TelegramAccount) {
   return assignments?.[0]?.roles?.key ?? (data?.member_type as string | undefined) ?? "inconnu";
 }
 
-async function getConversation(supabase: AdminClient, account: TelegramAccount, roleKey: string) {
+export async function getConversation(supabase: AdminClient, account: BotAccount, roleKey: string) {
   const current = await supabase
     .from("bot_conversations")
     .select("*")
-    .eq("telegram_account_id", account.id)
+    .eq(accountColumn(account.channel), account.id)
     .in("status", ["active", "waiting_user", "waiting_system"])
     .is("archived_at", null)
     .order("last_activity_at", { ascending: false })
@@ -229,9 +281,10 @@ async function getConversation(supabase: AdminClient, account: TelegramAccount, 
   const created = await supabase
     .from("bot_conversations")
     .insert({
+      channel: account.channel,
       organization_id: account.organization_id,
       profile_id: account.profile_id,
-      telegram_account_id: account.id,
+      [accountColumn(account.channel)]: account.id,
       role_key: roleKey,
     })
     .select("*")
@@ -240,7 +293,7 @@ async function getConversation(supabase: AdminClient, account: TelegramAccount, 
   return created.data as BotConversation;
 }
 
-function roleMenu(role: string) {
+export function roleMenu(role: string) {
   if (role === "artisan") {
     return {
       text: "Que souhaitez-vous faire ?",
@@ -328,7 +381,7 @@ async function confirmLink(supabase: AdminClient, token: string, user: TelegramU
   return account.data as TelegramAccount;
 }
 
-async function listHomes(supabase: AdminClient, account: TelegramAccount) {
+async function listHomes(supabase: AdminClient, account: Pick<BotAccount, "organization_id" | "profile_id">) {
   const { data, error } = await supabase
     .from("bien_occupants")
     .select("bien_id,biens(id,name,reference,address_line1,city,organization_id)")
@@ -350,7 +403,7 @@ async function showIncidentSummary(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
   conversation: BotConversation,
-  chatId: number,
+  chatId: number | string,
 ) {
   const context = conversation.context;
   const attachments = await supabase
@@ -406,7 +459,7 @@ async function createIncidentFromConversation(supabase: AdminClient, conversatio
       created_by: conversation.profile_id,
       category_id: category.data?.id ?? null,
       category: String(context.categorySlug ?? "autre"),
-      description: String(context.description ?? "Incident declare depuis Telegram"),
+      description: String(context.description ?? "Incident declare depuis la messagerie"),
       priority: "normale",
       status: "nouveau",
       photos: [],
@@ -452,36 +505,38 @@ async function storeAttachment(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
   conversation: BotConversation,
-  message: TelegramMessage,
+  incoming: BotIncomingMessage,
   messageId: string,
 ) {
-  const photo = message.photo?.[message.photo.length - 1];
-  const document = message.document;
-  const file = photo ?? document;
-  if (!file) return null;
-  const declaredSize = file.file_size ?? 0;
-  const mimeType = document?.mime_type ?? "image/jpeg";
+  const attachment = incoming.attachment;
+  if (!attachment) return null;
+  const declaredSize = attachment.fileSize ?? 0;
+  const declaredMime = attachment.mimeType;
   const duplicate = await supabase
     .from("bot_attachments")
     .select("id")
-    .eq("telegram_file_unique_id", file.file_unique_id)
+    .eq("telegram_file_unique_id", attachment.fileUniqueId)
     .eq("conversation_id", conversation.id)
     .in("status", ["pending", "stored"])
     .is("archived_at", null)
     .maybeSingle();
   if (duplicate.data) return { duplicate: true };
-  if (declaredSize > maximumAttachmentBytes || !allowedAttachmentMimeTypes.has(mimeType)) {
+  if (
+    declaredSize > maximumAttachmentBytes ||
+    (declaredMime !== null && !allowedAttachmentMimeTypes.has(declaredMime))
+  ) {
     await supabase.from("bot_attachments").insert({
+      channel: adapter.channel,
       organization_id: conversation.organization_id,
       conversation_id: conversation.id,
       message_id: messageId,
       profile_id: conversation.profile_id,
-      telegram_file_id: file.file_id,
-      telegram_file_unique_id: file.file_unique_id,
-      caption: message.caption,
-      file_name: document?.file_name,
-      mime_type: mimeType,
-      file_size_bytes: declaredSize,
+      telegram_file_id: attachment.fileId,
+      telegram_file_unique_id: attachment.fileUniqueId,
+      caption: incoming.caption,
+      file_name: attachment.fileName,
+      mime_type: declaredMime,
+      file_size_bytes: Math.min(declaredSize, maximumAttachmentBytes),
       status: "invalid",
       error_code: declaredSize > maximumAttachmentBytes ? "FILE_TOO_LARGE" : "MIME_NOT_ALLOWED",
     });
@@ -491,15 +546,16 @@ async function storeAttachment(
   const created = await supabase
     .from("bot_attachments")
     .insert({
+      channel: adapter.channel,
       organization_id: conversation.organization_id,
       conversation_id: conversation.id,
       message_id: messageId,
       profile_id: conversation.profile_id,
-      telegram_file_id: file.file_id,
-      telegram_file_unique_id: file.file_unique_id,
-      caption: message.caption,
-      file_name: document?.file_name,
-      mime_type: mimeType,
+      telegram_file_id: attachment.fileId,
+      telegram_file_unique_id: attachment.fileUniqueId,
+      caption: incoming.caption,
+      file_name: attachment.fileName,
+      mime_type: declaredMime,
       file_size_bytes: declaredSize,
     })
     .select("id")
@@ -507,10 +563,14 @@ async function storeAttachment(
   if (created.error) throw created.error;
 
   try {
-    const downloaded = await adapter.downloadFile(file.file_id);
-    const downloadedMimeType = allowedAttachmentMimeTypes.has(downloaded.mimeType) ? downloaded.mimeType : mimeType;
-    if (downloaded.bytes.byteLength > maximumAttachmentBytes || !allowedAttachmentMimeTypes.has(downloadedMimeType)) {
-      throw new Error("Fichier Telegram invalide.");
+    const downloaded = await adapter.downloadFile(attachment.fileId);
+    const downloadedMimeType = allowedAttachmentMimeTypes.has(downloaded.mimeType) ? downloaded.mimeType : declaredMime;
+    if (
+      !downloadedMimeType ||
+      downloaded.bytes.byteLength > maximumAttachmentBytes ||
+      !allowedAttachmentMimeTypes.has(downloadedMimeType)
+    ) {
+      throw new Error("Fichier invalide.");
     }
     const extension = downloaded.filePath.split(".").pop() ?? "bin";
     const storagePath = `${conversation.organization_id}/${conversation.profile_id}/${conversation.id}/${created.data.id}.${extension}`;
@@ -542,9 +602,9 @@ async function storeAttachment(
 async function showFollowUp(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
-  account: TelegramAccount,
+  account: BotAccount,
   conversation: BotConversation,
-  chatId: number,
+  chatId: number | string,
 ) {
   const homes = await listHomes(supabase, account);
   const homeIds = homes.map((home) => home.id);
@@ -577,9 +637,9 @@ async function showFollowUp(
 async function showDocuments(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
-  account: TelegramAccount,
+  account: BotAccount,
   conversation: BotConversation,
-  chatId: number,
+  chatId: number | string,
 ) {
   const documents = await supabase
     .from("documents")
@@ -650,9 +710,9 @@ async function prepareDocumentEmail(supabase: AdminClient, conversation: BotConv
 async function showSchedules(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
-  account: TelegramAccount,
+  account: BotAccount,
   conversation: BotConversation,
-  chatId: number,
+  chatId: number | string,
 ) {
   const requests = await supabase
     .from("incident_schedule_requests")
@@ -732,17 +792,17 @@ async function saveScheduleSlots(
   return slots;
 }
 
-async function processConnectedMessage(
+export async function processConnectedMessage(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
-  update: TelegramUpdate,
-  account: TelegramAccount,
-  message: TelegramMessage,
+  account: BotAccount,
+  incoming: BotIncomingMessage,
   webhookId: string,
   skipIncomingLog = false,
 ) {
   const role = await findRole(supabase, account);
   let conversation = await getConversation(supabase, account, role);
+  const replyTarget = account.replyTarget;
   const recent = await supabase
     .from("bot_messages")
     .select("id", { count: "exact", head: true })
@@ -755,55 +815,55 @@ async function processConnectedMessage(
       adapter,
       conversation,
       { text: "Trop de messages ont ete recus. Reessayez dans une minute." },
-      message.chat.id,
+      replyTarget,
     );
     return;
   }
 
-  let messageType = "text";
-  if (message.photo) messageType = "photo";
-  else if (message.document) messageType = "document";
+  const messageType = incoming.attachment ? incoming.attachment.kind : "text";
 
   let incomingMessageId: string | null = null;
   if (!skipIncomingLog) {
-    const incoming = await supabase
+    const logged = await supabase
       .from("bot_messages")
       .insert({
+        channel: adapter.channel,
         organization_id: account.organization_id,
         conversation_id: conversation.id,
         profile_id: account.profile_id,
         webhook_update_id: webhookId,
         direction: "incoming",
         message_type: messageType,
-        telegram_message_id: message.message_id,
-        body: message.text ?? message.caption,
+        ...externalIdColumns(incoming.externalMessageId),
+        body: incoming.text ?? incoming.caption,
         status: "received",
-        metadata: { update_id: update.update_id },
+        metadata: incoming.metadata ?? {},
       })
       .select("id")
       .single();
-    if (incoming.error) throw incoming.error;
-    incomingMessageId = incoming.data.id;
+    if (logged.error) throw logged.error;
+    incomingMessageId = logged.data.id;
   }
 
-  const text = (message.text ?? message.caption ?? "").trim();
-  if (message.photo || message.document) {
+  const text = (incoming.text ?? incoming.caption ?? "").trim();
+  if (incoming.attachment) {
     if (!conversation.state.startsWith("incident_"))
       throw new Error("Aucun incident en cours de declaration pour ce fichier.");
     if (!incomingMessageId) throw new Error("Message de piece jointe non journalise.");
-    await storeAttachment(supabase, adapter, conversation, message, incomingMessageId);
-    await showIncidentSummary(supabase, adapter, conversation, message.chat.id);
+    await storeAttachment(supabase, adapter, conversation, incoming, incomingMessageId);
+    await showIncidentSummary(supabase, adapter, conversation, replyTarget);
     return;
   }
 
-  if (text === "/start" || text === "/menu") {
+  const command = text.toLowerCase();
+  if (command === "/start" || command === "/menu" || command === "menu") {
     conversation = await updateConversation(supabase, conversation, {
       state: "idle",
       status: "active",
       question_count: 0,
       context: {},
     });
-    await sendAndLog(supabase, adapter, conversation, roleMenu(role), message.chat.id);
+    await sendAndLog(supabase, adapter, conversation, roleMenu(role), replyTarget);
     return;
   }
 
@@ -827,7 +887,7 @@ async function processConnectedMessage(
           text: "Quel logement est concerne ?",
           buttons: homes.map((home) => [{ text: `${home.reference} - ${home.name}`, callbackData: `home:${home.id}` }]),
         },
-        message.chat.id,
+        replyTarget,
       );
       return;
     }
@@ -845,7 +905,7 @@ async function processConnectedMessage(
         adapter,
         conversation,
         { text: "Pouvez-vous preciser l endroit exact et ce qui est endommage ?" },
-        message.chat.id,
+        replyTarget,
       );
       return;
     }
@@ -861,7 +921,7 @@ async function processConnectedMessage(
       adapter,
       conversation,
       { text: "Envoyez une ou plusieurs photos, puis utilisez /sansphoto si vous ne pouvez pas en fournir." },
-      message.chat.id,
+      replyTarget,
     );
     return;
   }
@@ -881,13 +941,13 @@ async function processConnectedMessage(
       adapter,
       conversation,
       { text: "Merci. Envoyez une ou plusieurs photos, ou utilisez /sansphoto." },
-      message.chat.id,
+      replyTarget,
     );
     return;
   }
 
-  if (conversation.state === "incident_photo" && text === "/sansphoto") {
-    await showIncidentSummary(supabase, adapter, conversation, message.chat.id);
+  if (conversation.state === "incident_photo" && (command === "/sansphoto" || command === "sans photo")) {
+    await showIncidentSummary(supabase, adapter, conversation, replyTarget);
     return;
   }
 
@@ -900,7 +960,7 @@ async function processConnectedMessage(
       adapter,
       conversation,
       { text: `${slots.length} creneaux ont ete enregistres et transmis au responsable.` },
-      message.chat.id,
+      replyTarget,
     );
     return;
   }
@@ -914,15 +974,15 @@ async function processConnectedMessage(
       context: {},
       status: "waiting_user",
     });
-    await processConnectedMessage(supabase, adapter, update, account, { ...message, text }, webhookId, true);
+    await processConnectedMessage(supabase, adapter, account, { ...incoming, text }, webhookId, true);
     return;
   }
   if (classification.intent === "suivre_incident")
-    return showFollowUp(supabase, adapter, account, conversation, message.chat.id);
+    return showFollowUp(supabase, adapter, account, conversation, replyTarget);
   if (classification.intent === "demander_document")
-    return showDocuments(supabase, adapter, account, conversation, message.chat.id);
+    return showDocuments(supabase, adapter, account, conversation, replyTarget);
   if (classification.intent === "proposer_disponibilites" && role === "artisan")
-    return showSchedules(supabase, adapter, account, conversation, message.chat.id);
+    return showSchedules(supabase, adapter, account, conversation, replyTarget);
   await sendAndLog(
     supabase,
     adapter,
@@ -931,24 +991,22 @@ async function processConnectedMessage(
       text: "Je n ai pas suffisamment compris. Choisissez une action ou demandez une transmission au responsable.",
       buttons: roleMenu(role).buttons,
     },
-    message.chat.id,
+    replyTarget,
   );
 }
 
-async function processCallback(
+export async function processCallback(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
-  update: TelegramUpdate,
-  account: TelegramAccount,
+  account: BotAccount,
+  data: string,
+  callbackId: string | null,
   webhookId: string,
 ) {
-  const callback = update.callback_query;
-  if (!callback?.message || !callback.data) return;
-  await adapter.answerCallback(callback.id);
+  if (callbackId) await adapter.answerCallback(callbackId);
   const role = await findRole(supabase, account);
   let conversation = await getConversation(supabase, account, role);
-  const chatId = callback.message.chat.id;
-  const data = callback.data;
+  const chatId = account.replyTarget;
 
   if (data === "menu_incident") {
     conversation = await updateConversation(supabase, conversation, {
@@ -1072,6 +1130,7 @@ async function processCallback(
   }
 
   await supabase.from("bot_messages").insert({
+    channel: adapter.channel,
     organization_id: account.organization_id,
     conversation_id: conversation.id,
     profile_id: account.profile_id,
@@ -1128,8 +1187,9 @@ export async function processTelegramUpdate(update: TelegramUpdate) {
 
     if (update.callback_query?.data?.startsWith("link_confirm:")) {
       const account = await confirmLink(supabase, update.callback_query.data.slice(13), user, message.chat.id);
-      const role = await findRole(supabase, account);
-      const conversation = await getConversation(supabase, account, role);
+      const botAccount = toBotAccount(account, message.chat.id);
+      const role = await findRole(supabase, botAccount);
+      const conversation = await getConversation(supabase, botAccount, role);
       const identity = await resolveBotBrandIdentity(supabase, account.organization_id, role);
       await adapter.answerCallback(update.callback_query.id, "Compte lie");
       await sendAndLog(
@@ -1171,9 +1231,24 @@ export async function processTelegramUpdate(update: TelegramUpdate) {
       .update({ organization_id: account.organization_id })
       .eq("id", webhook.data.id);
     if (update.callback_query) {
-      await processCallback(supabase, adapter, update, account, webhook.data.id);
+      if (update.callback_query.message && update.callback_query.data) {
+        await processCallback(
+          supabase,
+          adapter,
+          toBotAccount(account, update.callback_query.message.chat.id),
+          update.callback_query.data,
+          update.callback_query.id,
+          webhook.data.id,
+        );
+      }
     } else if (update.message) {
-      await processConnectedMessage(supabase, adapter, update, account, update.message, webhook.data.id);
+      await processConnectedMessage(
+        supabase,
+        adapter,
+        toBotAccount(account, update.message.chat.id),
+        toIncomingMessage(update.message, update.update_id),
+        webhook.data.id,
+      );
     }
     await supabase
       .from("bot_webhook_updates")

@@ -99,6 +99,50 @@ test("un choix de bouton interactif expose son identifiant (equivalent callback)
   assert.equal(event.callbackData, "menu:declarer_incident");
 });
 
+test("une image et un document WhatsApp exposent leur type MIME et leur nom de fichier", () => {
+  const payload: WhatsAppWebhookPayload = {
+    object: "whatsapp_business_account",
+    entry: [
+      {
+        id: "waba-1",
+        changes: [
+          {
+            field: "messages",
+            value: {
+              messaging_product: "whatsapp",
+              messages: [
+                {
+                  from: "33612345678",
+                  id: "wamid.IMG",
+                  timestamp: "1700000002",
+                  type: "image",
+                  image: { id: "media-1", mime_type: "image/jpeg", caption: "La fuite" },
+                },
+                {
+                  from: "33612345678",
+                  id: "wamid.DOC",
+                  timestamp: "1700000003",
+                  type: "document",
+                  document: { id: "media-2", mime_type: "application/pdf", filename: "constat.pdf" },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const [image, document] = parseWhatsAppEvents(payload);
+  assert.equal(image.kind, "media");
+  assert.equal(image.media?.kind, "image");
+  assert.equal(image.media?.mimeType, "image/jpeg");
+  assert.equal(image.media?.caption, "La fuite");
+  assert.equal(document.media?.kind, "document");
+  assert.equal(document.media?.mimeType, "application/pdf");
+  assert.equal(document.media?.fileName, "constat.pdf");
+});
+
 test("les accuses de statut et les objets non-WhatsApp sont ignores", () => {
   const statuses: WhatsAppWebhookPayload = {
     object: "whatsapp_business_account",
