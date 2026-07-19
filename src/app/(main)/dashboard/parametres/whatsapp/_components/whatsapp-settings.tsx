@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Ban, Copy, MessageCircle } from "lucide-react";
+import { Ban, Copy, MessageCircle, Radio } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,16 @@ export function WhatsAppSettings({ initialPayload }: { initialPayload: WhatsAppS
   const [generating, setGenerating] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [generated, setGenerated] = useState<{ waLink: string | null; token: string } | null>(null);
+  const [subscribing, setSubscribing] = useState(false);
+
+  async function subscribe() {
+    setSubscribing(true);
+    const response = await fetch("/api/bot/whatsapp/subscribe", { method: "POST" });
+    setSubscribing(false);
+    const body = (await response.json().catch(() => ({}))) as { success?: boolean; message?: string };
+    if (!response.ok) return toast.error(body.message ?? "Abonnement impossible.");
+    toast.success("Réception activée : le compte WhatsApp est abonné à l'application.");
+  }
 
   const memberLabel = (member: WhatsAppSettingsPayload["members"][number]) =>
     [
@@ -102,6 +112,20 @@ export function WhatsAppSettings({ initialPayload }: { initialPayload: WhatsAppS
         />
         <Metric label="Membres eligibles" value={payload.members.length} />
       </div>
+
+      <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
+        <h2 className="font-medium text-sm">Activer la réception des messages</h2>
+        <p className="text-muted-foreground text-sm">
+          À faire une seule fois : abonne le compte WhatsApp Business à l&apos;application pour que les messages des
+          membres soient bien transmis au bot.
+        </p>
+        <div>
+          <Button type="button" variant="outline" disabled={subscribing} onClick={subscribe}>
+            <Radio data-icon="inline-start" />
+            Activer la réception
+          </Button>
+        </div>
+      </section>
 
       <section className="flex flex-col gap-3 rounded-lg border bg-card p-4">
         <h2 className="font-medium text-sm">Generer un lien de liaison</h2>

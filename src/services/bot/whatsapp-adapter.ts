@@ -114,6 +114,17 @@ export class WhatsAppAdapter implements BotChannelAdapter {
     return;
   }
 
+  /**
+   * Abonne le compte WhatsApp Business (WABA) à cette application. Étape indispensable pour
+   * que Meta aiguille les messages entrants vers le webhook (POST {WABA}/subscribed_apps, idempotent).
+   */
+  async subscribeAccount(businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID) {
+    if (!businessAccountId) {
+      throw new Error("WHATSAPP_BUSINESS_ACCOUNT_ID manquant.");
+    }
+    return this.call<{ success?: boolean }>(`${businessAccountId}/subscribed_apps`, {});
+  }
+
   /** Télécharge un média entrant : récupère l'URL signée puis le binaire. */
   async downloadFile(mediaId: string) {
     const metaResponse = await fetch(`${GRAPH_BASE}/${mediaId}`, {
