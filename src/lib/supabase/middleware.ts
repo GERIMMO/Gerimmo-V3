@@ -26,8 +26,10 @@ export async function updateSession(request: NextRequest) {
   const isProtectedApplicationPath = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
   const isPublicWebhook =
     pathname === "/api/bot/telegram/webhook" ||
+    pathname === "/api/bot/whatsapp/webhook" ||
     pathname === "/api/stripe/webhook" ||
     pathname === "/api/automations/business" ||
+    pathname === "/api/automations/rent" ||
     pathname === "/api/cron/production-health";
   const isPublicCommercial = pathname === "/api/commercial";
 
