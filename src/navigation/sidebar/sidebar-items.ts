@@ -11,6 +11,7 @@ import {
   ListChecks,
   type LucideIcon,
   MessageSquare,
+  Receipt,
   Settings,
   Users,
 } from "lucide-react";
@@ -84,6 +85,12 @@ export const sidebarItems: NavGroup[] = [
         title: "Biens",
         url: "/dashboard/biens",
         icon: Building2,
+      },
+      {
+        id: "loyers",
+        title: "Loyers",
+        url: "/dashboard/loyers",
+        icon: Receipt,
       },
       {
         id: "utilisateurs",
