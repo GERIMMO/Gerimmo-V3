@@ -97,6 +97,9 @@ export function PublicFooter() {
           <Link href="/aide" className="text-muted-foreground">
             Centre d’aide
           </Link>
+          <Link href="/confidentialite" className="text-muted-foreground">
+            Confidentialité
+          </Link>
           <Link href="/auth/v2/login" className="text-muted-foreground">
             Connexion
           </Link>
