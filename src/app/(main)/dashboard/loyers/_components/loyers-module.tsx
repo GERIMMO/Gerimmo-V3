@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { Check, FileCheck2, RefreshCw, X } from "lucide-react";
+import { AlertTriangle, Check, FileCheck2, RefreshCw, Send, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +40,7 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
   const [pending, setPending] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
+  const [reminding, setReminding] = useState<string | null>(null);
 
   async function refresh() {
     const response = await fetch("/api/rent");
@@ -97,6 +98,23 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
       current.map((period) => (period.id === periodId ? { ...period, quittance_status } : period)),
     );
     toast.success(emailed ? "Quittance validée et envoyée au locataire." : "Quittance validée et disponible.");
+  }
+
+  async function remind(periodId: string) {
+    setReminding(periodId);
+    const response = await fetch("/api/rent/reminder", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ periodId }),
+    });
+    setReminding(null);
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { message?: string };
+      return toast.error(body.message ?? "Relance impossible.");
+    }
+    const { miseEnDemeure } = (await response.json()) as { miseEnDemeure: boolean };
+    toast.success(miseEnDemeure ? "Mise en demeure envoyée au locataire." : "Relance envoyée au locataire.");
+    await refresh();
   }
 
   const counts = {
@@ -199,6 +217,26 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
                       >
                         <X data-icon="inline-start" />
                         Non reçu
+                      </Button>
+                    </div>
+                  ) : period.status === "impaye" ? (
+                    <div className="flex items-center justify-end gap-2">
+                      {period.reminder_count > 0 ? (
+                        <span className="text-muted-foreground text-xs">{period.reminder_count}/2 relance(s)</span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={period.reminder_count >= 2 ? "destructive" : "outline"}
+                        disabled={reminding === period.id}
+                        onClick={() => remind(period.id)}
+                      >
+                        {period.reminder_count >= 2 ? (
+                          <AlertTriangle data-icon="inline-start" />
+                        ) : (
+                          <Send data-icon="inline-start" />
+                        )}
+                        {period.reminder_count >= 2 ? "Mettre en demeure" : "Relancer"}
                       </Button>
                     </div>
                   ) : (

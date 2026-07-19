@@ -231,6 +231,110 @@ export async function validateQuittance(input: { periodId: string }) {
   return { periodId: input.periodId, quittance_status: finalStatus, emailed };
 }
 
+/** Met en file un e-mail lié à un document, si le locataire a une adresse. Renvoie true si mis en file. */
+async function queueTenantEmail(
+  supabase: UserClient,
+  input: { organizationId: string; documentId: string; tenantProfileId: string | null; subject: string; body: string },
+) {
+  if (!input.tenantProfileId) return false;
+  const profile = await supabase.from("profiles").select("email").eq("id", input.tenantProfileId).maybeSingle();
+  const email = profile.data?.email as string | null | undefined;
+  if (!email) return false;
+  const outbox = await supabase.from("document_email_outbox").insert({
+    organization_id: input.organizationId,
+    document_id: input.documentId,
+    recipient_email: email,
+    subject: input.subject,
+    body: input.body,
+    status: "pret",
+  } as never);
+  if (outbox.error) throw outbox.error;
+  return true;
+}
+
+type ImpayePeriod = {
+  id: string;
+  organization_id: string;
+  bien_id: string;
+  tenant_profile_id: string | null;
+  period_month: string;
+  status: RentPeriodStatus;
+  reminder_count: number;
+};
+
+/**
+ * Relance un loyer impayé : crée un courrier (disponible au locataire) + e-mail.
+ * Après 2 relances, la relance suivante devient une mise en demeure (statut mise_en_demeure).
+ * Idempotence côté déclencheur (n8n) : n'agit que sur les périodes 'impaye'.
+ */
+export async function sendRentReminder(input: { periodId: string }) {
+  const supabase = await createClient();
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth.user) throw new Error("Authentification requise.");
+
+  const result = await supabase
+    .from("rent_periods" as never)
+    .select("id,organization_id,bien_id,tenant_profile_id,period_month,status,reminder_count")
+    .eq("id", input.periodId)
+    .maybeSingle();
+  if (result.error) throw result.error;
+  const period = result.data as unknown as ImpayePeriod | null;
+  if (!period || period.status !== "impaye") {
+    throw new Error("Ce loyer n'est pas en impayé.");
+  }
+
+  const isMiseEnDemeure = period.reminder_count >= 2;
+  const nextNumber = period.reminder_count + 1;
+  const label = monthLabel(period.period_month);
+  const title = isMiseEnDemeure ? `Mise en demeure - loyer ${label}` : `Relance ${nextNumber} - loyer ${label}`;
+  const prefix = isMiseEnDemeure ? "MED" : "REL";
+
+  const document = await supabase
+    .from("documents")
+    .insert({
+      organization_id: period.organization_id,
+      bien_id: period.bien_id,
+      tenant_profile_id: period.tenant_profile_id,
+      title,
+      reference: `${prefix}-${period.period_month.replace(/-/g, "").slice(0, 6)}-${period.id.slice(0, 8)}-${nextNumber}`,
+      document_type: "courrier",
+      status: "actif",
+      visibility: "locataire",
+      mime_type: "application/pdf",
+      metadata: {
+        rent_period_id: period.id,
+        kind: isMiseEnDemeure ? "mise_en_demeure" : "relance",
+        reminder_number: nextNumber,
+      },
+    } as never)
+    .select("id")
+    .single();
+  if (document.error) throw document.error;
+  const documentId = (document.data as unknown as { id: string }).id;
+
+  const emailed = await queueTenantEmail(supabase, {
+    organizationId: period.organization_id,
+    documentId,
+    tenantProfileId: period.tenant_profile_id,
+    subject: isMiseEnDemeure ? `Mise en demeure - loyer ${label}` : `Relance loyer ${label}`,
+    body: isMiseEnDemeure
+      ? "Bonjour,\n\nMalgré nos relances, votre loyer reste impayé. Vous êtes mis en demeure de régulariser votre situation. Ce courrier est disponible dans votre espace GERIMMO."
+      : "Bonjour,\n\nSauf erreur de notre part, votre loyer n'a pas été réglé. Merci de régulariser rapidement. Ce courrier est disponible dans votre espace GERIMMO.",
+  });
+
+  const periodUpdate = await supabase
+    .from("rent_periods" as never)
+    .update(
+      (isMiseEnDemeure
+        ? { status: "mise_en_demeure", mise_en_demeure_at: nowIso(), last_reminder_at: nowIso(), updated_at: nowIso() }
+        : { reminder_count: nextNumber, last_reminder_at: nowIso(), updated_at: nowIso() }) as never,
+    )
+    .eq("id", input.periodId);
+  if (periodUpdate.error) throw periodUpdate.error;
+
+  return { periodId: input.periodId, miseEnDemeure: isMiseEnDemeure, reminderNumber: nextNumber, emailed };
+}
+
 /**
  * Crée les échéances de loyer du mois pour toutes les locations actives visibles.
  * Idempotent (contrainte d'unicité bien/locataire/mois). Renvoie le nombre créé.
