@@ -83,6 +83,15 @@ export async function generateWhatsAppInvitation(input: GenerateTelegramInvitati
   };
 }
 
+/**
+ * Abonne le compte WhatsApp Business à l'application (via le jeton serveur). À déclencher une fois
+ * pour activer la réception des messages entrants. Idempotent côté Meta.
+ */
+export async function subscribeWhatsAppAccount() {
+  const adapter = new WhatsAppAdapter();
+  return adapter.subscribeAccount();
+}
+
 /** Données de la page réglages WhatsApp (lues sous RLS : chacun ne voit que son périmètre). */
 export async function listWhatsAppSettingsData(): Promise<WhatsAppSettingsPayload> {
   const supabase = await createUserClient();
