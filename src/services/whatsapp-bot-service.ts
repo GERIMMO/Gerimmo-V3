@@ -100,7 +100,9 @@ export async function listWhatsAppSettingsData(): Promise<WhatsAppSettingsPayloa
       .limit(100),
     supabase
       .from("organization_members")
-      .select("organization_id,profile_id,member_type,profiles(full_name,email),organizations(name)")
+      .select(
+        "organization_id,profile_id,member_type,profiles!organization_members_profile_id_fkey(full_name,email),organizations(name)",
+      )
       .eq("status", "active")
       .is("archived_at", null)
       .limit(500),
