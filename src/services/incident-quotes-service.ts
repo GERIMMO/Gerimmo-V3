@@ -155,16 +155,23 @@ export async function selectQuote(id: string) {
 
   const quote = current.data as Pick<IncidentQuote, "id" | "organization_id" | "quote_request_id" | "recipient_id">;
   await assertSupervisionQuoteRequest(quote.quote_request_id);
-  await supabase
+  // Ces deux mises à jour remettent à 'recu' les devis précédemment retenus. Leur résultat
+  // était intégralement jeté : même une erreur franche passait inaperçue. Si elles ne
+  // s'appliquent pas, plusieurs devis restent 'retenu' sur la même demande et la suite du
+  // parcours (comparatif, intervention, facturation) désigne le mauvais artisan.
+  // Pas de contrôle du nombre de lignes ici : zéro ligne est légitime (aucun autre devis).
+  const resetQuotes = await supabase
     .from("incident_quotes")
     .update({ status: "recu" } as never)
     .eq("quote_request_id", quote.quote_request_id)
     .neq("id", id);
-  await supabase
+  if (resetQuotes.error) throw resetQuotes.error;
+  const resetRecipients = await supabase
     .from("incident_quote_recipients")
     .update({ status: "recu" } as never)
     .eq("quote_request_id", quote.quote_request_id)
     .neq("id", quote.recipient_id);
+  if (resetRecipients.error) throw resetRecipients.error;
 
   const [{ data, error }, requestUpdate, recipientUpdate] = await Promise.all([
     supabase
@@ -173,19 +180,27 @@ export async function selectQuote(id: string) {
       .eq("id", id)
       .select("*")
       .single(),
+    // Ces deux-là DOIVENT toucher une ligne : sans .select(), un refus RLS ne lève rien et
+    // l'application affichait « devis retenu » pendant que la demande restait à son ancien
+    // statut — le parcours d'intervention ne pouvait plus avancer, sans explication.
     supabase
       .from("incident_quote_requests")
       .update({ status: "retenu" } as never)
-      .eq("id", quote.quote_request_id),
+      .eq("id", quote.quote_request_id)
+      .select("id"),
     supabase
       .from("incident_quote_recipients")
       .update({ status: "retenu" } as never)
-      .eq("id", quote.recipient_id),
+      .eq("id", quote.recipient_id)
+      .select("id"),
   ]);
 
   for (const result of [requestUpdate, recipientUpdate]) {
     if (result.error) {
       throw result.error;
+    }
+    if (!result.data?.length) {
+      throw new Error("Selection du devis incomplete : la demande n a pas ete mise a jour.");
     }
   }
 

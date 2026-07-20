@@ -95,9 +95,13 @@ export async function createQuoteComparison(input: CreateComparisonInput) {
     throw insertItems.error;
   }
 
-  await (
+  // L'erreur de cette RPC était déclarée puis jetée : en cas d'échec, le comparatif était
+  // créé SANS recommandation et l'utilisateur voyait un tableau muet, sans explication.
+  // recommendQuoteComparison() teste bien cette erreur — l'incohérence était un oubli.
+  const recommendation = await (
     supabase as never as { rpc: (name: string, params: Record<string, string>) => Promise<{ error: Error | null }> }
   ).rpc("recommend_incident_quote", { target_comparison_id: comparison.id });
+  if (recommendation.error) throw recommendation.error;
 
   return comparison;
 }
@@ -163,14 +167,21 @@ export async function decideQuoteComparison(input: DecideComparisonInput) {
   } as const;
   const { comparisonStatus, decisionStatus } = decisionMap[input.decision];
 
+  // C'est cette ligne qui porte la décision ET le commentaire de refus. Sans .select(), un
+  // refus silencieux laissait le comparatif basculer (ligne suivante, protégée) pendant que
+  // la justification écrite par le propriétaire disparaissait sans bruit.
   const itemUpdate = await supabase
     .from("incident_quote_comparison_items")
     .update({ decision_status: decisionStatus, decision_comment: input.comment ?? null } as never)
     .eq("comparison_id", input.comparison_id)
-    .eq("quote_id", input.quote_id);
+    .eq("quote_id", input.quote_id)
+    .select("id");
 
   if (itemUpdate.error) {
     throw itemUpdate.error;
+  }
+  if (!itemUpdate.data?.length) {
+    throw new Error("Decision non enregistree sur le devis du comparatif.");
   }
 
   const { data, error } = await supabase

@@ -252,10 +252,18 @@ export async function createInterventionReport(input: CreateReportInput) {
   }
 
   const report = reportResult.data as InterventionReport;
-  await supabase
+  // C'est ce lien qui rend le rapport atteignable depuis la fiche intervention. Le résultat
+  // n'était ni testé ni même affecté : le rapport officiel et son document étaient bien
+  // créés, mais restaient introuvables dans l'application.
+  const linked = await supabase
     .from("incident_interventions")
     .update({ future_links: { rapport: report.id, bot: null, notifications: null } } as never)
-    .eq("id", intervention.id);
+    .eq("id", intervention.id)
+    .select("id");
+  if (linked.error) throw linked.error;
+  if (!linked.data?.length) {
+    throw new Error("Rapport genere mais non rattache a l intervention.");
+  }
 
   return report;
 }
