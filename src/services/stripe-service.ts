@@ -80,6 +80,34 @@ function mapSubscriptionStatus(status: Stripe.Subscription.Status) {
   return "expired";
 }
 
+/**
+ * Retrouve l'organisation d'un abonnement Stripe dont la metadata ne la porte pas :
+ * d'abord par l'identifiant d'abonnement déjà enregistré, puis par le client Stripe.
+ */
+async function findOrganizationForStripeSubscription(
+  admin: ReturnType<typeof createAdminClient>,
+  subscriptionId: string,
+  customer: Stripe.Subscription["customer"],
+): Promise<string | null> {
+  const bySubscription = await admin
+    .from("organization_subscriptions")
+    .select("organization_id")
+    .eq("stripe_subscription_id", subscriptionId)
+    .maybeSingle();
+  if (bySubscription.error) throw bySubscription.error;
+  if (bySubscription.data) return bySubscription.data.organization_id;
+
+  const customerId = typeof customer === "string" ? customer : customer?.id;
+  if (!customerId) return null;
+  const byCustomer = await admin
+    .from("organization_subscriptions")
+    .select("organization_id")
+    .eq("stripe_customer_id", customerId)
+    .maybeSingle();
+  if (byCustomer.error) throw byCustomer.error;
+  return byCustomer.data?.organization_id ?? null;
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
   const event = stripe.webhooks.constructEvent(rawBody, signature, getStripeWebhookSecret());
@@ -95,10 +123,24 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     await admin.from("stripe_webhook_events").update({ status: "processing", attempts: 1 }).eq("id", inserted.data.id);
     if (event.type.startsWith("customer.subscription.")) {
       const subscription = event.data.object as Stripe.Subscription;
-      const organizationId = subscription.metadata.organization_id;
-      if (organizationId) {
+      // metadata.organization_id n'est posé qu'au paiement initial (subscription_data.metadata).
+      // Un abonnement créé depuis le tableau de bord Stripe, migré, ou recréé lors d'un
+      // changement de formule arrive donc SANS. Auparavant le bloc était simplement sauté et
+      // l'événement marqué « traité » : une résiliation ou un échec de paiement n'était jamais
+      // répercuté (accès maintenu sans paiement), et rien ne le signalait. On retrouve
+      // désormais l'organisation par l'abonnement puis par le client Stripe, et à défaut on
+      // échoue bruyamment — l'événement passe en « failed » et Stripe le rejouera.
+      const organizationId =
+        subscription.metadata.organization_id ??
+        (await findOrganizationForStripeSubscription(admin, subscription.id, subscription.customer));
+      if (!organizationId) {
+        throw new Error(
+          `Abonnement Stripe ${subscription.id} rattache a aucune organisation connue (metadata absente).`,
+        );
+      }
+      {
         const period = subscription.items.data[0]?.current_period_end;
-        await admin
+        const applied = await admin
           .from("organization_subscriptions")
           .update({
             stripe_subscription_id: subscription.id,
@@ -110,7 +152,14 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
             next_invoice_at: period ? new Date(period * 1000).toISOString() : null,
             cancelled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
           })
-          .eq("organization_id", organizationId);
+          .eq("organization_id", organizationId)
+          .select("id");
+        if (applied.error) throw applied.error;
+        if (!applied.data?.length) {
+          throw new Error(
+            `Abonnement Stripe ${subscription.id} : aucune ligne mise a jour pour l organisation ${organizationId}.`,
+          );
+        }
       }
     }
     if (event.type === "invoice.paid" || event.type === "invoice.payment_failed") {
@@ -125,7 +174,15 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
             .select("id,organization_id")
             .eq("stripe_subscription_id", subscriptionId)
             .maybeSingle()
-        : { data: null };
+        : { data: null, error: null };
+      if (local.error) throw local.error;
+      // Une facture rattachée à un abonnement introuvable en base était ignorée en silence,
+      // l'événement restant marqué « traité » : le client était débité par Stripe sans aucune
+      // facture dans l'application ni confirmation de paiement. On échoue désormais pour que
+      // l'événement soit rejoué une fois l'abonnement rattaché.
+      if (subscriptionId && !local.data) {
+        throw new Error(`Facture Stripe ${invoice.id} : abonnement ${subscriptionId} inconnu en base.`);
+      }
       if (local.data) {
         await admin.from("billing_invoices").upsert(
           {
