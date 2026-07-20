@@ -82,7 +82,9 @@ export async function getCommunicationPayload(): Promise<CommunicationPayload> {
       .limit(150),
     supabase
       .from("communication_participants" as never)
-      .select("*,profiles(full_name,email)")
+      // Désambiguïsation obligatoire : communication_participants a deux clés étrangères
+      // vers profiles (profile_id, archived_by) et PostgREST refuse de choisir (PGRST201).
+      .select("*,profiles!communication_participants_profile_id_fkey(full_name,email)")
       .eq("organization_id", organizationId)
       .is("archived_at", null)
       .limit(500),
