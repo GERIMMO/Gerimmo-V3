@@ -180,12 +180,20 @@ export async function updateUser(input: UpdateUserInput) {
   await assertSupervisionProfile(input.profile_id, input.organization_id);
   const supabase = await createClient();
 
+  // assertSupervisionProfile ne contrôle rien hors contexte de supervision (elle rend la
+  // main immédiatement). C'est alors la RLS qui protège la donnée — mais un UPDATE bloqué
+  // par la RLS ne lève AUCUNE erreur : il ne touche simplement aucune ligne. Sans le
+  // `.select()` ci-dessous, l'application annonçait un succès sans rien avoir enregistré.
   if (input.full_name !== undefined || input.phone !== undefined) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("profiles")
       .update({ full_name: input.full_name, phone: input.phone } as never)
-      .eq("id", input.profile_id);
+      .eq("id", input.profile_id)
+      .select("id");
     if (error) throw error;
+    if (!data?.length) {
+      throw new Error("Modification refusee : cet utilisateur n est pas dans votre perimetre.");
+    }
   }
 
   if (input.job_title !== undefined || input.city !== undefined) {
@@ -201,16 +209,22 @@ export async function updateUser(input: UpdateUserInput) {
     if (error) throw error;
   }
 
+  // Même précaution : suspendre ou archiver quelqu'un hors de son périmètre ne doit pas
+  // passer pour une réussite.
   if (input.status) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("organization_members")
       .update({
         status: input.status === "inactive" ? "suspended" : input.status,
         archived_at: input.status === "archived" ? new Date().toISOString() : null,
       } as never)
       .eq("profile_id", input.profile_id)
-      .eq("organization_id", input.organization_id);
+      .eq("organization_id", input.organization_id)
+      .select("id");
     if (error) throw error;
+    if (!data?.length) {
+      throw new Error("Changement de statut refuse : cet utilisateur n est pas dans votre perimetre.");
+    }
   }
 
   await recordSupervisionAction("USER_UPDATED", "profile", input.profile_id, {
