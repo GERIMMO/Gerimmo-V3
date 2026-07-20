@@ -11,9 +11,9 @@ import type {
 } from "@/types/incident-quotes";
 
 import {
-  assertSupervisionIncident,
-  assertSupervisionQuoteRequest,
   getSupervisionIncidentIds,
+  narrowToSupervisionScopeIncident,
+  narrowToSupervisionScopeQuoteRequest,
 } from "./supervision-service";
 
 const futureLinks = {
@@ -58,7 +58,7 @@ export async function listIncidentQuotes(): Promise<IncidentQuotesPayload> {
 }
 
 export async function createQuoteRequest(input: CreateQuoteRequestInput) {
-  await assertSupervisionIncident(input.incident_id);
+  await narrowToSupervisionScopeIncident(input.incident_id);
   const supabase = await createClient();
   const { recipients = [], ...requestInput } = input;
   const { data, error } = await supabase
@@ -97,7 +97,7 @@ export async function createQuoteRequest(input: CreateQuoteRequestInput) {
 }
 
 export async function updateQuoteRequest({ id, ...input }: UpdateQuoteRequestInput) {
-  await assertSupervisionQuoteRequest(id);
+  await narrowToSupervisionScopeQuoteRequest(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_quote_requests")
@@ -122,7 +122,7 @@ export async function archiveQuoteRequest(id: string) {
 }
 
 export async function receiveQuote(input: ReceiveQuoteInput) {
-  await assertSupervisionQuoteRequest(input.quote_request_id);
+  await narrowToSupervisionScopeQuoteRequest(input.quote_request_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_quotes")
@@ -154,7 +154,7 @@ export async function selectQuote(id: string) {
   }
 
   const quote = current.data as Pick<IncidentQuote, "id" | "organization_id" | "quote_request_id" | "recipient_id">;
-  await assertSupervisionQuoteRequest(quote.quote_request_id);
+  await narrowToSupervisionScopeQuoteRequest(quote.quote_request_id);
   // Ces deux mises à jour remettent à 'recu' les devis précédemment retenus. Leur résultat
   // était intégralement jeté : même une erreur franche passait inaperçue. Si elles ne
   // s'appliquent pas, plusieurs devis restent 'retenu' sur la même demande et la suite du

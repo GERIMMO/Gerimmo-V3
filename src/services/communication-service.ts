@@ -14,7 +14,7 @@ import type {
   NotificationType,
 } from "@/types/communication";
 
-import { assertSupervisionProfile, getSupervisionDataScope } from "./supervision-service";
+import { getSupervisionDataScope, narrowToSupervisionScopeProfile } from "./supervision-service";
 import { randomUUID } from "node:crypto";
 
 async function getContext() {
@@ -269,7 +269,7 @@ export async function createCommunicationNotification(input: {
   action_url?: string | null;
 }) {
   const { supabase, user, organizationId } = await getContext();
-  await assertSupervisionProfile(input.recipient_profile_id, organizationId);
+  await narrowToSupervisionScopeProfile(input.recipient_profile_id, organizationId);
   const result = await supabase
     .from("communication_notifications" as never)
     .insert({
@@ -290,7 +290,7 @@ export async function createCommunicationNotification(input: {
 
 export async function markNotificationRead(notificationId: string, read: boolean) {
   const { supabase, organizationId, portalProfileId, supervision } = await getContext();
-  if (supervision?.profileIds) await assertSupervisionProfile(portalProfileId, organizationId);
+  if (supervision?.profileIds) await narrowToSupervisionScopeProfile(portalProfileId, organizationId);
   const result = await supabase
     .from("communication_notifications" as never)
     .update({ read_at: read ? new Date().toISOString() : null } as never)
@@ -408,7 +408,7 @@ export async function saveCommunicationPreferences(input: Omit<CommunicationPref
   const { supabase, organizationId, portalProfileId, supervision } = await getContext();
   if (input.profile_id !== portalProfileId || input.organization_id !== organizationId)
     throw new Error("Preferences non autorisees.");
-  if (supervision?.profileIds) await assertSupervisionProfile(portalProfileId, organizationId);
+  if (supervision?.profileIds) await narrowToSupervisionScopeProfile(portalProfileId, organizationId);
   const result = await supabase
     .from("communication_preferences" as never)
     .upsert(

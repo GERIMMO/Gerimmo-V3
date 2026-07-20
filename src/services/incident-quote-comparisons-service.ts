@@ -8,7 +8,7 @@ import type {
   IncidentQuoteValidationEvent,
 } from "@/types/incident-quote-comparisons";
 
-import { assertSupervisionQuoteRequest, getSupervisionQuoteRequestIds } from "./supervision-service";
+import { getSupervisionQuoteRequestIds, narrowToSupervisionScopeQuoteRequest } from "./supervision-service";
 
 const futureLinks = {
   planification: null,
@@ -65,7 +65,7 @@ export async function listQuoteComparisons(): Promise<IncidentQuoteComparisonsPa
 }
 
 export async function createQuoteComparison(input: CreateComparisonInput) {
-  await assertSupervisionQuoteRequest(input.quote_request_id);
+  await narrowToSupervisionScopeQuoteRequest(input.quote_request_id);
   const supabase = await createClient();
   const { items, ...comparisonInput } = input;
   const { data, error } = await supabase
@@ -114,7 +114,7 @@ export async function recommendQuoteComparison(comparisonId: string) {
     .eq("id", comparisonId)
     .single();
   if (comparison.error) throw comparison.error;
-  await assertSupervisionQuoteRequest((comparison.data as { quote_request_id: string }).quote_request_id);
+  await narrowToSupervisionScopeQuoteRequest((comparison.data as { quote_request_id: string }).quote_request_id);
   const { data, error } = await (
     supabase as never as {
       rpc: (name: string, params: Record<string, string>) => Promise<{ data: string; error: Error | null }>;
@@ -139,7 +139,7 @@ export async function decideQuoteComparison(input: DecideComparisonInput) {
   if (comparison.error) {
     throw comparison.error;
   }
-  await assertSupervisionQuoteRequest((comparison.data as { quote_request_id: string }).quote_request_id);
+  await narrowToSupervisionScopeQuoteRequest((comparison.data as { quote_request_id: string }).quote_request_id);
 
   if (input.decision === "cancel") {
     const { data, error } = await supabase

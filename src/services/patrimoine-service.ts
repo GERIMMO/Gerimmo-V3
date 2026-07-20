@@ -14,11 +14,11 @@ import type {
 } from "@/types/patrimoine";
 
 import {
-  assertSupervisionBien,
-  assertSupervisionManager,
-  assertSupervisionOrganization,
-  assertSupervisionPortal,
   getSupervisionDataScope,
+  narrowToSupervisionScopeBien,
+  narrowToSupervisionScopeManager,
+  narrowToSupervisionScopeOrganization,
+  narrowToSupervisionScopePortal,
   recordSupervisionAction,
 } from "./supervision-service";
 
@@ -94,8 +94,8 @@ export async function listPatrimoine(): Promise<PatrimoinePayload> {
 }
 
 export async function createPatrimoine(input: CreatePatrimoineInput) {
-  await assertSupervisionManager();
-  await assertSupervisionOrganization(input.organization_id);
+  await narrowToSupervisionScopeManager();
+  await narrowToSupervisionScopeOrganization(input.organization_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("patrimoines")
@@ -113,8 +113,8 @@ export async function createPatrimoine(input: CreatePatrimoineInput) {
 }
 
 export async function createResidence(input: CreateResidenceInput) {
-  await assertSupervisionManager();
-  await assertSupervisionOrganization(input.organization_id);
+  await narrowToSupervisionScopeManager();
+  await narrowToSupervisionScopeOrganization(input.organization_id);
   const supabase = await createClient();
   const patrimoine = await supabase
     .from("patrimoines")
@@ -140,8 +140,8 @@ export async function createResidence(input: CreateResidenceInput) {
 }
 
 export async function createBien(input: CreateBienInput) {
-  await assertSupervisionManager();
-  await assertSupervisionOrganization(input.organization_id);
+  await narrowToSupervisionScopeManager();
+  await narrowToSupervisionScopeOrganization(input.organization_id);
   const supabase = await createClient();
   const patrimoine = await supabase
     .from("patrimoines")
@@ -178,8 +178,8 @@ export async function createBien(input: CreateBienInput) {
 }
 
 export async function updateBien({ id, ...input }: UpdateBienInput) {
-  await assertSupervisionPortal(["agency", "owner", "property"]);
-  await assertSupervisionBien(id);
+  await narrowToSupervisionScopePortal(["agency", "owner", "property"]);
+  await narrowToSupervisionScopeBien(id);
   const supabase = await createClient();
   const current = await supabase.from("biens").select("organization_id").eq("id", id).maybeSingle();
   if (current.error || !current.data) throw new Error("Bien introuvable.");
@@ -204,8 +204,8 @@ export async function updateBien({ id, ...input }: UpdateBienInput) {
 }
 
 export async function archiveBien(id: string) {
-  await assertSupervisionPortal(["agency", "owner", "property"]);
-  await assertSupervisionBien(id);
+  await narrowToSupervisionScopePortal(["agency", "owner", "property"]);
+  await narrowToSupervisionScopeBien(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("biens")

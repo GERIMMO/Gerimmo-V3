@@ -11,7 +11,11 @@ import type {
   ScheduleDecisionInput,
 } from "@/types/incident-scheduling";
 
-import { assertSupervisionIncident, assertSupervisionSchedule, getSupervisionIncidentIds } from "./supervision-service";
+import {
+  getSupervisionIncidentIds,
+  narrowToSupervisionScopeIncident,
+  narrowToSupervisionScopeSchedule,
+} from "./supervision-service";
 
 const futureLinks = {
   intervention: null,
@@ -59,7 +63,7 @@ export async function listIncidentScheduling(): Promise<IncidentSchedulingPayloa
 }
 
 export async function createScheduleRequest(input: CreateScheduleRequestInput) {
-  await assertSupervisionIncident(input.incident_id);
+  await narrowToSupervisionScopeIncident(input.incident_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_schedule_requests")
@@ -83,7 +87,7 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
   if (input.slots.length < 3) {
     throw new Error("L artisan doit proposer au moins 3 creneaux.");
   }
-  await assertSupervisionSchedule(input.schedule_request_id);
+  await narrowToSupervisionScopeSchedule(input.schedule_request_id);
 
   const supabase = await createClient();
   const schedule = await supabase
@@ -163,7 +167,7 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
 }
 
 export async function decideSchedule(input: ScheduleDecisionInput) {
-  await assertSupervisionSchedule(input.schedule_request_id);
+  await narrowToSupervisionScopeSchedule(input.schedule_request_id);
   const supabase = await createClient();
   const scheduleResult = await supabase
     .from("incident_schedule_requests")

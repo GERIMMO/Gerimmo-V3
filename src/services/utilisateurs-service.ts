@@ -3,10 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import type { InviteUserInput, UpdateUserInput, UsersPayload } from "@/types/utilisateurs";
 
 import {
-  assertSupervisionManager,
-  assertSupervisionOrganization,
-  assertSupervisionProfile,
   getSupervisionDataScope,
+  narrowToSupervisionScopeManager,
+  narrowToSupervisionScopeOrganization,
+  narrowToSupervisionScopeProfile,
   recordSupervisionAction,
 } from "./supervision-service";
 import { createHash, randomBytes } from "node:crypto";
@@ -140,8 +140,8 @@ export async function listUsers(): Promise<UsersPayload> {
 }
 
 export async function inviteUser(input: InviteUserInput) {
-  await assertSupervisionManager();
-  await assertSupervisionOrganization(input.organization_id);
+  await narrowToSupervisionScopeManager();
+  await narrowToSupervisionScopeOrganization(input.organization_id);
   const supabase = await createClient();
   const token = randomBytes(32).toString("base64url");
   const { data, error } = await supabase
@@ -177,10 +177,10 @@ export async function inviteUser(input: InviteUserInput) {
 }
 
 export async function updateUser(input: UpdateUserInput) {
-  await assertSupervisionProfile(input.profile_id, input.organization_id);
+  await narrowToSupervisionScopeProfile(input.profile_id, input.organization_id);
   const supabase = await createClient();
 
-  // assertSupervisionProfile ne contrôle rien hors contexte de supervision (elle rend la
+  // narrowToSupervisionScopeProfile ne contrôle rien hors contexte de supervision (elle rend la
   // main immédiatement). C'est alors la RLS qui protège la donnée — mais un UPDATE bloqué
   // par la RLS ne lève AUCUNE erreur : il ne touche simplement aucune ligne. Sans le
   // `.select()` ci-dessous, l'application annonçait un succès sans rien avoir enregistré.

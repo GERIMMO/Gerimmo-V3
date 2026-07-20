@@ -18,9 +18,9 @@ import type {
 } from "@/types/incident-finalization";
 
 import {
-  assertSupervisionIncident,
-  assertSupervisionIntervention,
   getSupervisionIncidentIds,
+  narrowToSupervisionScopeIncident,
+  narrowToSupervisionScopeIntervention,
 } from "./supervision-service";
 
 const interventionFutureLinks = { rapport: null, bot: null, notifications: null };
@@ -89,7 +89,7 @@ export async function listIncidentFinalization(): Promise<IncidentFinalizationPa
 }
 
 export async function createIntervention(input: CreateInterventionInput) {
-  await assertSupervisionIncident(input.incident_id);
+  await narrowToSupervisionScopeIncident(input.incident_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_interventions")
@@ -113,7 +113,7 @@ export async function createIntervention(input: CreateInterventionInput) {
 }
 
 export async function updateIntervention({ id, ...input }: UpdateInterventionInput) {
-  await assertSupervisionIntervention(id);
+  await narrowToSupervisionScopeIntervention(id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_interventions")
@@ -158,7 +158,7 @@ export async function completeIntervention(input: UpdateInterventionInput) {
 }
 
 export async function addInterventionMaterial(input: Omit<InterventionMaterial, "id" | "created_at" | "archived_at">) {
-  await assertSupervisionIntervention(input.intervention_id);
+  await narrowToSupervisionScopeIntervention(input.intervention_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_intervention_materials")
@@ -174,7 +174,7 @@ export async function addInterventionMaterial(input: Omit<InterventionMaterial, 
 }
 
 export async function createInterventionReport(input: CreateReportInput) {
-  await assertSupervisionIntervention(input.intervention_id);
+  await narrowToSupervisionScopeIntervention(input.intervention_id);
   const supabase = await createClient();
   const interventionResult = await supabase
     .from("incident_interventions")
@@ -276,7 +276,7 @@ export async function updateInterventionReport({ id, action, ...input }: UpdateR
     .eq("id", id)
     .single();
   if (currentReport.error) throw currentReport.error;
-  await assertSupervisionIntervention((currentReport.data as { intervention_id: string }).intervention_id);
+  await narrowToSupervisionScopeIntervention((currentReport.data as { intervention_id: string }).intervention_id);
   const patch: Record<string, unknown> = { ...input };
 
   if (action === "preview") {
@@ -322,8 +322,8 @@ export async function updateInterventionReport({ id, action, ...input }: UpdateR
 }
 
 export async function createIncidentClosure(input: CreateClosureInput) {
-  await assertSupervisionIncident(input.incident_id);
-  await assertSupervisionIntervention(input.intervention_id);
+  await narrowToSupervisionScopeIncident(input.incident_id);
+  await narrowToSupervisionScopeIntervention(input.intervention_id);
   const supabase = await createClient();
   const statusMap = {
     validation: "valide",
@@ -350,8 +350,8 @@ export async function createIncidentClosure(input: CreateClosureInput) {
 }
 
 export async function createArtisanEvaluation(input: CreateEvaluationInput) {
-  await assertSupervisionIncident(input.incident_id);
-  await assertSupervisionIntervention(input.intervention_id);
+  await narrowToSupervisionScopeIncident(input.incident_id);
+  await narrowToSupervisionScopeIntervention(input.intervention_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_artisan_evaluations")

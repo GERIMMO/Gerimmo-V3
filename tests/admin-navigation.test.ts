@@ -83,8 +83,8 @@ test("les contextes imbriques sont controles sur le serveur", async () => {
 
   assert.match(service, /Un propriétaire ne peut ouvrir que ses biens/);
   assert.match(service, /Ce locataire n’occupe pas le bien supervisé/);
-  assert.match(service, /assertSupervisionBien/);
-  assert.match(service, /assertSupervisionProfile/);
+  assert.match(service, /narrowToSupervisionScopeBien/);
+  assert.match(service, /narrowToSupervisionScopeProfile/);
   assert.match(patrimoine, /getSupervisionDataScope/);
   assert.match(incidents, /supervision\.bienIds\.includes\(incident\.bien_id\)/);
   assert.match(documents, /isDocumentInSupervision/);
