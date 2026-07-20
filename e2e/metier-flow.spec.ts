@@ -228,7 +228,7 @@ test("parcours métier : incident → devis → comparatif → planification val
   const scheduleList = await page.request.get("/api/incidents/planification");
   expect(scheduleList.ok()).toBeTruthy();
   const { slots } = (await scheduleList.json()) as {
-    slots: Array<{ id: string; schedule_request_id: string }>;
+    slots: Array<{ id: string; schedule_request_id: string; starts_at: string; ends_at: string }>;
   };
   const ourSlots = slots.filter((slot) => slot.schedule_request_id === schedule.id);
   expect(ourSlots.length, "Les 3 créneaux proposés doivent être enregistrés.").toBe(3);
@@ -248,7 +248,74 @@ test("parcours métier : incident → devis → comparatif → planification val
   expect(finalSchedule?.status, "La planification doit être validée.").toBe("valide");
   expect(finalSchedule?.selected_slot_id, "Le créneau retenu doit être enregistré.").toBe(ourSlots[0].id);
 
-  // 18. Nettoyage : archiver la demande de devis puis l'incident
+  // 18. Créer l'intervention sur le créneau retenu
+  const retainedSlot = ourSlots[0];
+  const createIntervention = await page.request.post("/api/incidents/finalisation", {
+    data: {
+      organization_id: bien!.organization_id,
+      incident_id: created.id,
+      bien_id: bien!.id,
+      schedule_request_id: schedule.id,
+      selected_slot_id: retainedSlot.id,
+      accepted_quote_id: recommended!.quote_id,
+      quote_recipient_id: recommended!.recipient_id,
+      planned_starts_at: retainedSlot.starts_at,
+      planned_ends_at: retainedSlot.ends_at,
+      execution_mode: "artisan_prive",
+      work_description: "Réparation E2E",
+    },
+  });
+  expect(createIntervention.status(), `POST intervention: ${await createIntervention.text()}`).toBe(201);
+  const intervention = (await createIntervention.json()) as { id: string };
+
+  // 19. Démarrer puis terminer l'intervention
+  const start = await page.request.patch(`/api/incidents/finalisation/${intervention.id}`, {
+    data: { action: "demarrer" },
+  });
+  expect(start.ok(), `PATCH demarrer: ${await start.text()}`).toBeTruthy();
+
+  const complete = await page.request.patch(`/api/incidents/finalisation/${intervention.id}`, {
+    data: { action: "terminer", final_amount_cents: 45000, artisan_comment: "Intervention réalisée" },
+  });
+  expect(complete.ok(), `PATCH terminer: ${await complete.text()}`).toBeTruthy();
+
+  // 20. Produire le rapport d'intervention
+  const createReport = await page.request.post("/api/incidents/finalisation", {
+    data: { type: "rapport", intervention_id: intervention.id, observations: "Rapport E2E" },
+  });
+  expect(createReport.status(), `POST rapport: ${await createReport.text()}`).toBe(201);
+  const report = (await createReport.json()) as { id: string };
+
+  // 21. Clôturer l'incident sur la base de ce rapport
+  const createClosure = await page.request.post("/api/incidents/finalisation", {
+    data: {
+      type: "cloture",
+      organization_id: bien!.organization_id,
+      incident_id: created.id,
+      intervention_id: intervention.id,
+      report_id: report.id,
+      action: "cloture_normale",
+      comment: "Clôture E2E",
+    },
+  });
+  expect(createClosure.status(), `POST cloture: ${await createClosure.text()}`).toBe(201);
+
+  // 22. Vérifier l'intervention terminée et la clôture enregistrée
+  const finalization = await page.request.get("/api/incidents/finalisation");
+  expect(finalization.ok()).toBeTruthy();
+  const { interventions, closures } = (await finalization.json()) as {
+    interventions: Array<{ id: string; status: string }>;
+    closures: Array<{ incident_id: string; action: string }>;
+  };
+  expect(interventions.find((item) => item.id === intervention.id)?.status, "L'intervention doit être terminée.").toBe(
+    "terminee",
+  );
+  expect(
+    closures.some((item) => item.incident_id === created.id && item.action === "cloture_normale"),
+    "La clôture de l'incident doit être enregistrée.",
+  ).toBeTruthy();
+
+  // 23. Nettoyage : archiver la demande de devis puis l'incident
   const archiveQuote = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
     data: { action: "archive" },
   });
