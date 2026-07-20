@@ -8,6 +8,7 @@ import { AdminModulePlaceholder } from "@/app/(main)/admin/_components/admin-mod
 import { AdminNationalView } from "@/app/(main)/admin/_components/admin-national-view";
 import { ContractorValidationConsole } from "@/app/(main)/admin/_components/contractor-validation-console";
 import { IntegrationCasesConsole } from "@/app/(main)/admin/_components/integration-cases-console";
+import { RunAutomationsCard } from "@/app/(main)/admin/_components/run-automations-card";
 import { SupervisionCenter } from "@/app/(main)/admin/_components/supervision-center";
 import { ActionCenter } from "@/app/(main)/dashboard/a-faire/_components/action-center";
 import { SuperAdminConsole } from "@/app/(main)/dashboard/super-admin/_components/super-admin-console";
@@ -85,7 +86,7 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
       "communication-templates",
       "system-health",
       "bots",
-      "automations",
+      // "automations" est traité plus bas : la section reçoit en plus le déclenchement manuel.
       "communications",
       "integrations",
       "technical-log",
@@ -100,6 +101,17 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
     return <AdminFunctionalModule initialPayload={await getAdminFunctionalPayload("acquisition")} />;
   }
   if (["bot-configuration", "telegram"].includes(section)) return <TelegramPage />;
+
+  // Le déclenchement manuel des automatisations a sa place ici, au-dessus du suivi des
+  // exécutions — c'est là qu'on vient le chercher.
+  if (section === "automations") {
+    return (
+      <div className="flex flex-col gap-4">
+        <RunAutomationsCard />
+        <AdminFunctionalModule initialPayload={await getAdminFunctionalPayload(section)} />
+      </div>
+    );
+  }
 
   if (section === "articles") {
     const query = await searchParams;
