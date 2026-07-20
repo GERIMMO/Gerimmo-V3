@@ -141,28 +141,34 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
 
   let y = HAUTEUR - 140;
 
-  // ── Destinataire ──────────────────────────────────────────────────────────────────
-  // Le bailleur n'est PAS répété ici : il occupe déjà le bandeau, comme l'en-tête d'un
-  // courrier. Seul le destinataire figure dans le bloc, décalé à droite.
+  // ── Les deux parties, côte à côte ─────────────────────────────────────────────────
+  // Le bailleur peut figurer ici sans faire doublon : le bandeau porte désormais le
+  // logement, pas lui.
   const largeurBloc = (CONTENU - 18) / 2;
   const hauteurBloc = 78;
-  const xDestinataire = MARGE + largeurBloc + 18;
-  page.drawRectangle({
-    x: xDestinataire,
-    y: y - hauteurBloc,
-    width: largeurBloc,
-    height: hauteurBloc,
-    color: BLEU_PALE,
-    borderColor: LIGNE,
-    borderWidth: 0.5,
-  });
-  texte("LOCATAIRE", xDestinataire + 12, y - 20, { taille: 7.5, gras: true, couleur: BLEU });
-  texte(data.locataire.nom, xDestinataire + 12, y - 38, { taille: 11, gras: true });
-  let ligneDestinataire = y - 54;
-  for (const ligne of data.locataire.adresse.slice(0, 2)) {
-    texte(ligne, xDestinataire + 12, ligneDestinataire, { taille: 9.5, couleur: GRIS });
-    ligneDestinataire -= 13;
-  }
+  const bloc = (x: number, intitule: string, nom: string, lignes: string[]) => {
+    page.drawRectangle({
+      x,
+      y: y - hauteurBloc,
+      width: largeurBloc,
+      height: hauteurBloc,
+      color: BLEU_PALE,
+      borderColor: LIGNE,
+      borderWidth: 0.5,
+    });
+    texte(intitule, x + 12, y - 20, { taille: 7.5, gras: true, couleur: BLEU });
+    texte(nom, x + 12, y - 38, { taille: 11, gras: true });
+    let ligneBloc = y - 54;
+    for (const ligne of lignes.slice(0, 2)) {
+      texte(ligne, x + 12, ligneBloc, { taille: 9.5, couleur: GRIS });
+      ligneBloc -= 13;
+    }
+  };
+
+  const identiteBailleur = [...data.bailleur.adresse];
+  if (data.bailleur.siren) identiteBailleur.push(`SIREN ${data.bailleur.siren}`);
+  bloc(MARGE, "BAILLEUR OU MANDATAIRE", data.bailleur.nom, identiteBailleur);
+  bloc(MARGE + largeurBloc + 18, "LOCATAIRE", data.locataire.nom, data.locataire.adresse);
   y -= hauteurBloc + 26;
 
   // ── Période quittancée ────────────────────────────────────────────────────────────
