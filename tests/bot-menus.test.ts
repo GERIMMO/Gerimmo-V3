@@ -55,18 +55,22 @@ test("chaque menu propose une aide et des libelles non vides", () => {
   }
 });
 
-test("TROU CONNU : les roles de back-office heritent du menu locataire", () => {
-  // findRole() renvoie la cle de role reelle ('administrateur_agence', 'agent_immobilier',
-  // 'super_admin'), ou 'inconnu' si l'appartenance est introuvable. Aucune de ces valeurs
-  // n'est traitee par roleMenu : toutes tombent dans le cas par defaut, celui du locataire.
-  // Un administrateur d'agence se voit donc proposer « Declarer un incident » et « Demander
-  // un document » comme s il etait locataire de son propre parc.
-  const menuLocataire = roleMenu("locataire");
-  for (const role of ["administrateur_agence", "agent_immobilier", "super_admin", "inconnu"]) {
-    assert.deepEqual(
-      actions(roleMenu(role)),
-      actions(menuLocataire),
-      `${role} recoit aujourd hui le menu locataire — a corriger quand le menu back-office existera`,
-    );
+test("le back-office ne se voit jamais proposer les actions d'un locataire", () => {
+  // findRole() renvoie la cle de role ('administrateur_agence', 'agent_immobilier',
+  // 'super_admin') ou, faute d'attribution, le member_type brut ('admin', 'agent').
+  // Les deux formes doivent mener au menu back-office.
+  for (const role of ["administrateur_agence", "agent_immobilier", "super_admin", "admin", "agent"]) {
+    const menu = roleMenu(role);
+    assert.deepEqual(actions(menu), ["menu_agency_incidents", "menu_help"], `menu inattendu pour ${role}`);
+    for (const actionLocataire of ["menu_incident", "menu_follow", "menu_tenant_schedule", "menu_documents"]) {
+      assert.ok(!actions(menu).includes(actionLocataire), `${role} ne doit pas se voir proposer ${actionLocataire}`);
+    }
+    assert.match(menu.text, /tableau de bord/i, "le back-office doit etre renvoye vers son tableau de bord");
   }
+});
+
+test("un role inconnu retombe sur le menu locataire, le moins privilegie", () => {
+  // Choix assume : en l'absence d'information fiable sur le role, on ne propose pas les
+  // actions d'un gestionnaire. Les actions elles-memes restent controlees cote base.
+  assert.deepEqual(actions(roleMenu("inconnu")), actions(roleMenu("locataire")));
 });

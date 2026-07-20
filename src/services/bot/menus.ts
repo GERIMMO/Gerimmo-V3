@@ -10,11 +10,29 @@ export type BotMenuButton = { text: string; callbackData: string };
 export type BotMenu = { text: string; buttons: BotMenuButton[][] };
 
 /**
- * ⚠️ Les rôles de back-office (agent_immobilier, administrateur_agence, super_admin) ne
- * sont pas traités et retombent sur le menu locataire. Voir tests/bot-menus.test.ts, qui
- * documente ce trou.
+ * Rôles de back-office. On accepte les clés de rôle ET les `member_type` bruts, car
+ * findRole() retombe sur le member_type quand aucun rôle n'est attribué.
  */
+const rolesBackOffice = new Set(["administrateur_agence", "agent_immobilier", "super_admin", "admin", "agent"]);
+
+export function isBackOfficeRole(role: string) {
+  return rolesBackOffice.has(role);
+}
+
 export function roleMenu(role: string): BotMenu {
+  // Le back-office gère depuis le tableau de bord : le bot lui sert de fil de notifications
+  // et de consultation rapide. Surtout, il ne doit PAS se voir proposer les actions d'un
+  // locataire (« Declarer un incident », « Demander un document »), ce qui était le cas
+  // auparavant faute de branche dédiée.
+  if (isBackOfficeRole(role)) {
+    return {
+      text: "Vous recevez ici les notifications de votre agence. La gestion complete se fait sur votre tableau de bord GERIMMO.",
+      buttons: [
+        [{ text: "Incidents de l agence", callbackData: "menu_agency_incidents" }],
+        [{ text: "Aide", callbackData: "menu_help" }],
+      ],
+    };
+  }
   if (role === "artisan") {
     return {
       text: "Que souhaitez-vous faire ?",
