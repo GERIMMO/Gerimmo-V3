@@ -44,7 +44,7 @@ export function AgencyBrandingSettings({
 
   async function save(restore = false) {
     setSaving(true);
-    const response = await fetch("/api/bot/telegram/branding", {
+    const response = await fetch("/api/bot/branding", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ ...form, restore }),
@@ -60,7 +60,7 @@ export function AgencyBrandingSettings({
     <div className="flex h-full flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-heading font-semibold text-xl tracking-normal">Identite Telegram</h1>
+          <h1 className="font-heading font-semibold text-xl tracking-normal">Identite de l agence</h1>
           <p className="text-muted-foreground text-sm">Personnalisation des messages de l agence.</p>
         </div>
         {organizations.length > 1 ? (
@@ -68,7 +68,7 @@ export function AgencyBrandingSettings({
             <Label>Organisation</Label>
             <Select
               value={form.organization_id}
-              onValueChange={(value) => router.replace(`/dashboard/parametres/telegram?organizationId=${value}`)}
+              onValueChange={(value) => router.replace(`/dashboard/parametres/identite?organizationId=${value}`)}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -194,7 +194,7 @@ export function AgencyBrandingSettings({
 
         <aside className="space-y-3 rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
-            <div className="font-medium text-sm">Apercu Telegram</div>
+            <div className="font-medium text-sm">Apercu dans le bot</div>
             <Badge variant={form.branding_enabled && form.is_agency ? "default" : "secondary"}>
               {form.branding_enabled && form.is_agency ? "Agence" : "GERIMMO"}
             </Badge>
