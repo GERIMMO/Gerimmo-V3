@@ -118,14 +118,17 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   const largeurTexte = (contenu: string, taille: number, gras = false) =>
     (gras ? grasse : normale).widthOfTextAtSize(assainir(contenu), taille);
 
-  // ── Bandeau d'en-tête : identité du bailleur, auteur du document ───────────────────
+  // ── Bandeau d'en-tête : LE LOGEMENT ───────────────────────────────────────────────
+  // C'est le logement qui identifie la quittance au premier coup d'œil, pas le bailleur.
+  // Celui-ci reste identifié par la formule « Je soussigné… » et par le pied de page, ce qui
+  // satisfait l'obligation de désigner l'auteur du document.
   page.drawRectangle({ x: 0, y: HAUTEUR - 96, width: LARGEUR, height: 96, color: BLEU });
-  texte(data.bailleur.nom, MARGE, HAUTEUR - 44, { taille: 15, gras: true, couleur: BLANC });
-
-  const identiteBailleur = [...data.bailleur.adresse, data.bailleur.siren ? `SIREN ${data.bailleur.siren}` : null]
-    .filter((ligne): ligne is string => Boolean(ligne))
-    .join(" · ");
-  if (identiteBailleur) texte(identiteBailleur, MARGE, HAUTEUR - 62, { taille: 8.5, couleur: BLEU_PALE });
+  texte("LOGEMENT LOUÉ", MARGE, HAUTEUR - 34, { taille: 7.5, gras: true, couleur: BLEU_PALE });
+  let ligneEnTete = HAUTEUR - 54;
+  for (const ligne of data.logement.slice(0, 2)) {
+    texte(ligne, MARGE, ligneEnTete, { taille: 14, gras: true, couleur: BLANC });
+    ligneEnTete -= 18;
+  }
 
   const titre = "QUITTANCE DE LOYER";
   texte(titre, LARGEUR - MARGE - largeurTexte(titre, 13, true), HAUTEUR - 44, {
@@ -162,9 +165,9 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   }
   y -= hauteurBloc + 26;
 
-  // ── Logement et période, mis en avant ─────────────────────────────────────────────
-  // C'est ce que le lecteur cherche en premier : quel logement, quel mois.
-  const hauteurEnjeu = 30 + data.logement.length * 16;
+  // ── Période quittancée ────────────────────────────────────────────────────────────
+  // Le logement n'est plus repris ici : il occupe le bandeau d'en-tête.
+  const hauteurEnjeu = 52;
   page.drawRectangle({
     x: MARGE,
     y: y - hauteurEnjeu,
@@ -173,23 +176,45 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
     borderColor: BLEU,
     borderWidth: 1,
   });
-  texte("LOGEMENT LOUÉ", MARGE + 14, y - 18, { taille: 7.5, gras: true, couleur: BLEU });
-  let ligneLogement = y - 38;
-  for (const ligne of data.logement) {
-    texte(ligne, MARGE + 14, ligneLogement, { taille: 13, gras: true });
-    ligneLogement -= 16;
-  }
-  const periode = `${data.periodeLabel} — du ${data.periodeDebut} au ${data.periodeFin}`;
-  texte("PÉRIODE QUITTANCÉE", LARGEUR - MARGE - 14 - largeurTexte("PÉRIODE QUITTANCÉE", 7.5, true), y - 18, {
-    taille: 7.5,
+  texte("PÉRIODE QUITTANCÉE", MARGE + 14, y - 20, { taille: 7.5, gras: true, couleur: BLEU });
+  texte(`${data.periodeLabel} — du ${data.periodeDebut} au ${data.periodeFin}`, MARGE + 14, y - 40, {
+    taille: 13,
     gras: true,
-    couleur: BLEU,
   });
-  texte(periode, LARGEUR - MARGE - 14 - largeurTexte(periode, 11, true), y - 38, { taille: 11, gras: true });
-  y -= hauteurEnjeu + 26;
+  y -= hauteurEnjeu + 24;
+
+  const total = data.loyerCents + data.chargesCents;
+
+  // ── Formule de quittance, AVANT le détail chiffré ─────────────────────────────────
+  // Elle énonce l'engagement ; le tableau qui suit ne fait que le détailler.
+  const paragraphe = (contenu: string, taille = 10, couleur = ENCRE) => {
+    const mots = assainir(contenu).split(" ");
+    let ligne = "";
+    for (const mot of mots) {
+      const essai = ligne ? `${ligne} ${mot}` : mot;
+      if (normale.widthOfTextAtSize(essai, taille) > CONTENU) {
+        texte(ligne, MARGE, y, { taille, couleur });
+        y -= taille + 5;
+        ligne = mot;
+      } else {
+        ligne = essai;
+      }
+    }
+    if (ligne) {
+      texte(ligne, MARGE, y, { taille, couleur });
+      y -= taille + 5;
+    }
+  };
+
+  paragraphe(
+    `Je soussigné ${data.bailleur.nom}, bailleur ou mandataire du logement désigné ci-dessus, ` +
+      `déclare avoir reçu de ${data.locataire.nom} la somme de ${formaterEurosTexte(total)} ` +
+      `au titre du loyer et des charges de la période indiquée, et lui en donne quittance, ` +
+      `sous réserve de tous mes droits.`,
+  );
+  y -= 20;
 
   // ── Détail chiffré : loyer et charges séparés, comme l'exige la loi ───────────────
-  const total = data.loyerCents + data.chargesCents;
   const colonneMontant = LARGEUR - MARGE - 12;
   const hauteurLigne = 26;
 
@@ -228,35 +253,7 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   ligneMontant("Total réglé", total, { fond: true, gras: true });
   y -= 10;
   texte(`Règlement reçu le ${data.dateReglement}.`, MARGE, y, { taille: 9.5, couleur: GRIS });
-  y -= 28;
-
-  // ── Formule de quittance ──────────────────────────────────────────────────────────
-  const paragraphe = (contenu: string, taille = 10, couleur = ENCRE) => {
-    const mots = assainir(contenu).split(" ");
-    let ligne = "";
-    for (const mot of mots) {
-      const essai = ligne ? `${ligne} ${mot}` : mot;
-      if (normale.widthOfTextAtSize(essai, taille) > CONTENU) {
-        texte(ligne, MARGE, y, { taille, couleur });
-        y -= taille + 5;
-        ligne = mot;
-      } else {
-        ligne = essai;
-      }
-    }
-    if (ligne) {
-      texte(ligne, MARGE, y, { taille, couleur });
-      y -= taille + 5;
-    }
-  };
-
-  paragraphe(
-    `Je soussigné ${data.bailleur.nom}, bailleur ou mandataire du logement désigné ci-dessus, ` +
-      `déclare avoir reçu de ${data.locataire.nom} la somme de ${formaterEurosTexte(total)} ` +
-      `au titre du loyer et des charges de la période indiquée, et lui en donne quittance, ` +
-      `sous réserve de tous mes droits.`,
-  );
-  y -= 14;
+  y -= 26;
 
   // Mentions légales, dans un encadré discret.
   const hauteurMentions = 56;
