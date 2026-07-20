@@ -333,18 +333,41 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
             .maybeSingle()
         : { data: null, error: null };
       if (local.error) throw local.error;
-      // Une facture rattachée à un abonnement introuvable en base était ignorée en silence,
-      // l'événement restant marqué « traité » : le client était débité par Stripe sans aucune
-      // facture dans l'application ni confirmation de paiement. On échoue désormais pour que
-      // l'événement soit rejoué une fois l'abonnement rattaché.
-      if (subscriptionId && !local.data) {
-        throw new Error(`Facture Stripe ${invoice.id} : abonnement ${subscriptionId} inconnu en base.`);
+
+      // Rattacher par l'abonnement ne suffit pas, pour deux raisons observées en conditions
+      // réelles :
+      //  - Stripe envoie invoice.paid AVANT customer.subscription.created (constaté à moins
+      //    d'une seconde d'écart) : au moment de la facture, l'abonnement n'est pas encore
+      //    enregistré ;
+      //  - la gestion annuelle est un abonnement distinct, volontairement absent de
+      //    organization_subscriptions : ses factures ne s'y retrouveront jamais.
+      // Le client Stripe, lui, est enregistré dès la création du paiement : c'est le point
+      // d'ancrage fiable.
+      let target = local.data;
+      if (!target) {
+        const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+        if (customerId) {
+          const byCustomer = await admin
+            .from("organization_subscriptions")
+            .select("id,organization_id")
+            .eq("stripe_customer_id", customerId)
+            .maybeSingle();
+          if (byCustomer.error) throw byCustomer.error;
+          target = byCustomer.data;
+        }
       }
-      if (local.data) {
+
+      // Une facture qu'on ne sait rattacher à aucune organisation était ignorée en silence,
+      // l'événement restant marqué « traité » : le client était débité sans aucune facture
+      // dans l'application. On échoue désormais pour que Stripe rejoue l'événement.
+      if (subscriptionId && !target) {
+        throw new Error(`Facture Stripe ${invoice.id} : aucune organisation trouvee (abonnement ${subscriptionId}).`);
+      }
+      if (target) {
         await admin.from("billing_invoices").upsert(
           {
-            organization_id: local.data.organization_id,
-            subscription_id: local.data.id,
+            organization_id: target.organization_id,
+            subscription_id: target.id,
             number: invoice.number ?? invoice.id,
             status: event.type === "invoice.paid" ? "paid" : "open",
             currency: invoice.currency,
@@ -362,10 +385,10 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
         );
         await admin.from("automation_events").upsert(
           {
-            organization_id: local.data.organization_id,
+            organization_id: target.organization_id,
             event_type: event.type === "invoice.paid" ? "payment.succeeded" : "payment.failed",
             aggregate_type: "invoice",
-            aggregate_id: local.data.id,
+            aggregate_id: target.id,
             payload: { stripe_invoice_id: invoice.id },
             idempotency_key: `stripe:${event.id}`,
           },
