@@ -22,7 +22,6 @@ type MemberRecord = {
   profiles?: { email?: string | null; full_name?: string | null; phone?: string | null } | null;
   organizations?: { name?: string | null } | null;
   member_role_assignments?: Array<{ roles?: { key?: string | null; name?: string | null } | null }>;
-  user_profile_details?: Array<{ job_title?: string | null; city?: string | null; last_seen_at?: string | null }>;
 };
 
 function hashToken(token: string) {
@@ -31,11 +30,15 @@ function hashToken(token: string) {
 
 export async function listUsers(): Promise<UsersPayload> {
   const supabase = await createClient();
-  const [members, invitations, activities, statusHistory] = await Promise.all([
+  const [members, invitations, activities, statusHistory, profileDetails] = await Promise.all([
     supabase
       .from("organization_members")
       .select(
-        "id,organization_id,profile_id,member_type,status,created_at,archived_at,profiles(id,email,full_name,phone),organizations(id,name),member_role_assignments(roles(key,name)),user_profile_details(job_title,city,last_seen_at)",
+        // `profiles` doit être désambiguïsé : organization_members a TROIS clés étrangères
+        // vers profiles (profile_id, invited_by, archived_by) et PostgREST refuse de choisir
+        // (PGRST201). user_profile_details n'est pas imbriquable ici : aucune clé étrangère
+        // ne relie les deux tables (PGRST200) — il est donc chargé séparément ci-dessous.
+        "id,organization_id,profile_id,member_type,status,created_at,archived_at,profiles!organization_members_profile_id_fkey(id,email,full_name,phone),organizations(id,name),member_role_assignments(roles(key,name))",
       )
       .order("created_at", { ascending: false }),
     supabase
@@ -52,13 +55,27 @@ export async function listUsers(): Promise<UsersPayload> {
       .select("id,organization_id,profile_id,previous_status,next_status,created_at")
       .order("created_at", { ascending: false })
       .limit(200),
+    supabase.from("user_profile_details").select("profile_id,organization_id,job_title,city,last_seen_at"),
   ]);
 
-  for (const result of [members, invitations, activities, statusHistory]) {
+  for (const result of [members, invitations, activities, statusHistory, profileDetails]) {
     if (result.error) {
       throw result.error;
     }
   }
+
+  // Rattachement manuel des détails de profil, faute de relation exploitable par PostgREST.
+  const detailsByMember = new Map(
+    (
+      (profileDetails.data ?? []) as Array<{
+        profile_id: string;
+        organization_id: string;
+        job_title: string | null;
+        city: string | null;
+        last_seen_at: string | null;
+      }>
+    ).map((detail) => [`${detail.profile_id}:${detail.organization_id}`, detail]),
+  );
 
   const supervision = await getSupervisionDataScope();
   const supervisedOrganizationId = supervision?.organizationId ?? null;
@@ -75,7 +92,9 @@ export async function listUsers(): Promise<UsersPayload> {
     : { data: null, error: null };
   if (membership.error) throw membership.error;
   const organizationId = supervisedOrganizationId ?? membership.data?.organization_id ?? null;
-  const users = ((members.data ?? []) as MemberRecord[])
+  // Les types générés ne décrivent pas la relation member_role_assignments, que PostgREST
+  // résout pourtant sans peine à l'exécution (clé étrangère organization_member_id).
+  const users = ((members.data ?? []) as unknown as MemberRecord[])
     .filter(
       (member) =>
         !supervisedOrganizationId ||
@@ -84,7 +103,7 @@ export async function listUsers(): Promise<UsersPayload> {
     )
     .map((member) => {
       const role = member.member_role_assignments?.[0]?.roles;
-      const details = member.user_profile_details?.[0];
+      const details = detailsByMember.get(`${member.profile_id}:${member.organization_id}`);
       return {
         id: member.id,
         profile_id: member.profile_id,
