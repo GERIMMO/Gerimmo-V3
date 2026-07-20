@@ -9,6 +9,7 @@ import { AdminNationalView } from "@/app/(main)/admin/_components/admin-national
 import { ContractorValidationConsole } from "@/app/(main)/admin/_components/contractor-validation-console";
 import { IntegrationCasesConsole } from "@/app/(main)/admin/_components/integration-cases-console";
 import { RunAutomationsCard } from "@/app/(main)/admin/_components/run-automations-card";
+import { StripeFailedEventsCard } from "@/app/(main)/admin/_components/stripe-failed-events-card";
 import { SupervisionCenter } from "@/app/(main)/admin/_components/supervision-center";
 import { SyncStripePricesCard } from "@/app/(main)/admin/_components/sync-stripe-prices-card";
 import { ActionCenter } from "@/app/(main)/dashboard/a-faire/_components/action-center";
@@ -73,7 +74,7 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
       // "offers" est traité plus bas : la section reçoit en plus la synchronisation Stripe.
       "promotion-codes",
       "revenue",
-      "payments",
+      // "payments" est traité plus bas : la section reçoit en plus les événements en échec.
       "growth",
       "usage",
       "acquisition",
@@ -102,6 +103,16 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
     return <AdminFunctionalModule initialPayload={await getAdminFunctionalPayload("acquisition")} />;
   }
   if (["bot-configuration", "telegram"].includes(section)) return <TelegramPage />;
+
+  // Les paiements en échec se consultent avec les paiements.
+  if (section === "payments") {
+    return (
+      <div className="flex flex-col gap-4">
+        <StripeFailedEventsCard />
+        <AdminFunctionalModule initialPayload={await getAdminFunctionalPayload(section)} />
+      </div>
+    );
+  }
 
   // La synchronisation des tarifs Stripe a sa place avec la grille d'offres.
   if (section === "offers") {
