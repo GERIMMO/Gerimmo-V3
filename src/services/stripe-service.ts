@@ -149,6 +149,40 @@ async function ensureAnnualSubscription(
   );
 }
 
+/** Événements Stripe restés en échec, pour le suivi et le rejeu depuis le back-office. */
+export async function listFailedStripeEvents() {
+  await requireSuperAdmin();
+  const { data, error } = await createAdminClient()
+    .from("stripe_webhook_events")
+    .select("id,stripe_event_id,event_type,status,last_error,received_at")
+    .in("status", ["failed", "processing"])
+    .order("received_at", { ascending: false })
+    .limit(50);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/**
+ * Rejoue un événement Stripe à partir du payload conservé.
+ *
+ * Évite d'avoir à passer par le tableau de bord Stripe pour un « Resend », et fonctionne même
+ * au-delà du délai de conservation des tentatives côté Stripe.
+ */
+export async function replayStripeEvent(eventRowId: string) {
+  await requireSuperAdmin();
+  const admin = createAdminClient();
+  const { data, error } = await admin
+    .from("stripe_webhook_events")
+    .select("id,payload,status")
+    .eq("id", eventRowId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Evenement introuvable.");
+  if (data.status === "processed") return { alreadyProcessed: true };
+
+  return applyStripeEvent(admin, getStripe(), data.payload as unknown as Stripe.Event, data.id);
+}
+
 /** Un tarif enregistré existe-t-il réellement dans le mode Stripe courant (test ou live) ? */
 async function priceExists(stripe: ReturnType<typeof getStripe>, priceId: string | null): Promise<boolean> {
   if (!priceId) return false;
@@ -282,6 +316,21 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     eventRowId = inserted.data.id;
   }
 
+  return applyStripeEvent(admin, stripe, event, eventRowId);
+}
+
+/**
+ * Applique un événement Stripe déjà enregistré.
+ *
+ * Séparé de la réception pour pouvoir être rejoué depuis le back-office à partir du payload
+ * conservé : un rejeu n'a pas de signature à revalider, seulement un traitement à refaire.
+ */
+async function applyStripeEvent(
+  admin: ReturnType<typeof createAdminClient>,
+  stripe: ReturnType<typeof getStripe>,
+  event: Stripe.Event,
+  eventRowId: string,
+) {
   try {
     await admin.from("stripe_webhook_events").update({ status: "processing" }).eq("id", eventRowId);
     if (event.type.startsWith("customer.subscription.")) {
