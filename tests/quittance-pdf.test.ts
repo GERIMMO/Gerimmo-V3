@@ -1,6 +1,7 @@
 import { PDFDocument } from "pdf-lib";
 
-import { buildQuittancePdf, formaterEuros } from "../src/lib/pdf/quittance.ts";
+import { formaterEuros } from "../src/lib/pdf/mise-en-page.ts";
+import { buildQuittancePdf } from "../src/lib/pdf/quittance.ts";
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -66,10 +67,10 @@ test("aucun chiffre ne disparait du document", async () => {
   // reecrite par le formateur en « [ {2}] », ce qui dans une classe signifie « espace,
   // accolade, CHIFFRE 2, accolade ». Toutes les dates et tous les montants perdaient leurs
   // 2 : « mars 2026 » devenait « mars  0 6 ». Sur une quittance, c'est eliminatoire.
-  const { assainirPourTest } = await import("../src/lib/pdf/quittance.ts");
-  assert.equal(assainirPourTest("mars 2026 — 31/03/2026"), "mars 2026 - 31/03/2026");
-  assert.equal(assainirPourTest("1234567890"), "1234567890");
-  assert.equal(assainirPourTest("article 21 de la loi n° 89-462"), "article 21 de la loi n° 89-462");
+  const { assainir } = await import("../src/lib/pdf/mise-en-page.ts");
+  assert.equal(assainir("mars 2026 — 31/03/2026"), "mars 2026 - 31/03/2026");
+  assert.equal(assainir("1234567890"), "1234567890");
+  assert.equal(assainir("article 21 de la loi n° 89-462"), "article 21 de la loi n° 89-462");
 });
 
 test("les accents francais sont conserves, pas transformes en texte sans accent", async () => {
