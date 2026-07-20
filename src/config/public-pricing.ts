@@ -8,6 +8,6 @@ export const agencyPlans = [
   { range: "1 à 50 biens", monthly: 79, setup: 199, annual: 199 },
   { range: "51 à 150 biens", monthly: 149, setup: 399, annual: 199 },
   { range: "151 à 300 biens", monthly: 249, setup: 399, annual: 399 },
-  { range: "301 à 600 biens", monthly: 399, setup: null, annual: 399 },
+  { range: "301 à 600 biens", monthly: 399, setup: 599, annual: 399 },
   { range: "Plus de 600 biens", monthly: null, setup: null, annual: null },
 ] as const;
