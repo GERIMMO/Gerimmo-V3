@@ -57,12 +57,21 @@ const BLANC = rgb(1, 1, 1);
  * génération. Seuls ces derniers sont donc remplacés — les accents sont conservés, un
  * document officiel sans accents faisant négligé.
  */
+export function assainirPourTest(texte: string) {
+  return assainir(texte);
+}
+
 function assainir(texte: string) {
-  return texte
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, "-")
-    .replace(/[ {2}]/g, " ");
+  return (
+    texte
+      .replace(/[‘’]/g, "'")
+      .replace(/[“”]/g, '"')
+      .replace(/[–—]/g, "-")
+      // Espaces insécables désignées par leur code : écrites littéralement, le formateur les
+      // réunit en « [ {2}] », qui dans une classe de caractères signifie « espace, accolade,
+      // CHIFFRE 2, accolade » — et efface donc tous les 2 du document.
+      .replace(/[  ]/g, " ")
+  );
 }
 
 export function formaterEuros(cents: number) {
@@ -129,45 +138,55 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
 
   let y = HAUTEUR - 140;
 
-  // ── Les deux parties, côte à côte ─────────────────────────────────────────────────
+  // ── Destinataire ──────────────────────────────────────────────────────────────────
+  // Le bailleur n'est PAS répété ici : il occupe déjà le bandeau, comme l'en-tête d'un
+  // courrier. Seul le destinataire figure dans le bloc, décalé à droite.
   const largeurBloc = (CONTENU - 18) / 2;
-  const hauteurBloc = 84;
-  const bloc = (x: number, intitule: string, nom: string, lignes: string[]) => {
-    page.drawRectangle({
-      x,
-      y: y - hauteurBloc,
-      width: largeurBloc,
-      height: hauteurBloc,
-      color: BLEU_PALE,
-      borderColor: LIGNE,
-      borderWidth: 0.5,
-    });
-    texte(intitule.toUpperCase(), x + 12, y - 20, { taille: 7.5, gras: true, couleur: BLEU });
-    texte(nom, x + 12, y - 38, { taille: 10.5, gras: true });
-    let ligneY = y - 54;
-    for (const ligne of lignes.slice(0, 3)) {
-      texte(ligne, x + 12, ligneY, { taille: 9, couleur: GRIS });
-      ligneY -= 13;
-    }
-  };
-
-  bloc(MARGE, "Bailleur", data.bailleur.nom, data.bailleur.adresse);
-  bloc(MARGE + largeurBloc + 18, "Locataire", data.locataire.nom, data.locataire.adresse);
+  const hauteurBloc = 78;
+  const xDestinataire = MARGE + largeurBloc + 18;
+  page.drawRectangle({
+    x: xDestinataire,
+    y: y - hauteurBloc,
+    width: largeurBloc,
+    height: hauteurBloc,
+    color: BLEU_PALE,
+    borderColor: LIGNE,
+    borderWidth: 0.5,
+  });
+  texte("LOCATAIRE", xDestinataire + 12, y - 20, { taille: 7.5, gras: true, couleur: BLEU });
+  texte(data.locataire.nom, xDestinataire + 12, y - 38, { taille: 11, gras: true });
+  let ligneDestinataire = y - 54;
+  for (const ligne of data.locataire.adresse.slice(0, 2)) {
+    texte(ligne, xDestinataire + 12, ligneDestinataire, { taille: 9.5, couleur: GRIS });
+    ligneDestinataire -= 13;
+  }
   y -= hauteurBloc + 26;
 
-  // ── Période et logement ───────────────────────────────────────────────────────────
-  texte("PÉRIODE QUITTANCÉE", MARGE, y, { taille: 7.5, gras: true, couleur: BLEU });
-  y -= 16;
-  texte(`${data.periodeLabel} — du ${data.periodeDebut} au ${data.periodeFin}`, MARGE, y, { taille: 11, gras: true });
-  y -= 22;
-
-  texte("LOGEMENT LOUÉ", MARGE, y, { taille: 7.5, gras: true, couleur: BLEU });
-  y -= 16;
+  // ── Logement et période, mis en avant ─────────────────────────────────────────────
+  // C'est ce que le lecteur cherche en premier : quel logement, quel mois.
+  const hauteurEnjeu = 30 + data.logement.length * 16;
+  page.drawRectangle({
+    x: MARGE,
+    y: y - hauteurEnjeu,
+    width: CONTENU,
+    height: hauteurEnjeu,
+    borderColor: BLEU,
+    borderWidth: 1,
+  });
+  texte("LOGEMENT LOUÉ", MARGE + 14, y - 18, { taille: 7.5, gras: true, couleur: BLEU });
+  let ligneLogement = y - 38;
   for (const ligne of data.logement) {
-    texte(ligne, MARGE, y, { taille: 10 });
-    y -= 14;
+    texte(ligne, MARGE + 14, ligneLogement, { taille: 13, gras: true });
+    ligneLogement -= 16;
   }
-  y -= 12;
+  const periode = `${data.periodeLabel} — du ${data.periodeDebut} au ${data.periodeFin}`;
+  texte("PÉRIODE QUITTANCÉE", LARGEUR - MARGE - 14 - largeurTexte("PÉRIODE QUITTANCÉE", 7.5, true), y - 18, {
+    taille: 7.5,
+    gras: true,
+    couleur: BLEU,
+  });
+  texte(periode, LARGEUR - MARGE - 14 - largeurTexte(periode, 11, true), y - 38, { taille: 11, gras: true });
+  y -= hauteurEnjeu + 26;
 
   // ── Détail chiffré : loyer et charges séparés, comme l'exige la loi ───────────────
   const total = data.loyerCents + data.chargesCents;

@@ -61,6 +61,17 @@ test("les caracteres typographiques ne font pas echouer la generation", async ()
   assert.ok(octets.byteLength > 1000);
 });
 
+test("aucun chiffre ne disparait du document", async () => {
+  // Regression : la classe de caracteres qui remplace les espaces insecables avait ete
+  // reecrite par le formateur en « [ {2}] », ce qui dans une classe signifie « espace,
+  // accolade, CHIFFRE 2, accolade ». Toutes les dates et tous les montants perdaient leurs
+  // 2 : « mars 2026 » devenait « mars  0 6 ». Sur une quittance, c'est eliminatoire.
+  const { assainirPourTest } = await import("../src/lib/pdf/quittance.ts");
+  assert.equal(assainirPourTest("mars 2026 — 31/03/2026"), "mars 2026 - 31/03/2026");
+  assert.equal(assainirPourTest("1234567890"), "1234567890");
+  assert.equal(assainirPourTest("article 21 de la loi n° 89-462"), "article 21 de la loi n° 89-462");
+});
+
 test("les accents francais sont conserves, pas transformes en texte sans accent", async () => {
   // Un document officiel francais ecrit « Periode » et « regle » fait neglige. L'encodage
   // WinAnsi des polices standard couvre les accents : il n'y a aucune raison de les retirer.
