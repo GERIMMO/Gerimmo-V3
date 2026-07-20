@@ -7,7 +7,13 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
  * Parcours métier réel (mutations) : connexion → création d'un incident sur un bien du
  * périmètre → demande de devis à 2 artisans → envoi → réception des 2 offres →
  * comparatif (avec recommandation calculée par la base) → sélection de l'offre
- * recommandée → vérifications → archivage (auto-nettoyage).
+ * recommandée → demande de créneaux → 3 disponibilités proposées → acceptation directe
+ * du responsable → vérifications → archivage (auto-nettoyage).
+ *
+ * Choix assumé : l'étape de planification est pilotée par le seul compte gestionnaire
+ * (`acceptation_directe`), ce qui évite d'orchestrer un 2e compte artisan/locataire.
+ * Le chemin multi-rôles (l'artisan propose, le locataire choisit via `choix_locataire`)
+ * reste à couvrir séparément.
  *
  * Règle métier couverte : GERIMMO exige au moins 2 devis pour envoyer une demande, sauf
  * choix explicite d'un artisan privé unique (`allow_single_private_artisan`). Le trigger
@@ -25,7 +31,7 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
  * à cause de la limitation de débit d'authentification Supabase — ce n'est pas une
  * régression. Laisser ~1 min entre deux exécutions rapprochées.
  */
-test("parcours métier : incident → devis → comparatif → offre retenue, puis archivage", async ({ page }) => {
+test("parcours métier : incident → devis → comparatif → planification validée", async ({ page }) => {
   test.skip(!E2E_EMAIL || !E2E_PASSWORD, "Identifiants E2E requis (E2E_USER_EMAIL / E2E_USER_PASSWORD).");
 
   // 1. Connexion
@@ -151,7 +157,13 @@ test("parcours métier : incident → devis → comparatif → offre retenue, pu
   const comparisonList = await page.request.get("/api/incidents/devis/comparatif");
   expect(comparisonList.ok()).toBeTruthy();
   const { items: comparisonItems } = (await comparisonList.json()) as {
-    items: Array<{ comparison_id: string; quote_id: string; is_recommended: boolean; recommendation_score: number }>;
+    items: Array<{
+      comparison_id: string;
+      quote_id: string;
+      recipient_id: string;
+      is_recommended: boolean;
+      recommendation_score: number;
+    }>;
   };
   const ourItems = comparisonItems.filter((item) => item.comparison_id === comparison.id);
   expect(ourItems.length, "Le comparatif doit contenir les 2 offres.").toBe(2);
@@ -180,7 +192,63 @@ test("parcours métier : incident → devis → comparatif → offre retenue, pu
     "L'offre sélectionnée doit passer au statut 'retenu'.",
   ).toBe("retenu");
 
-  // 12. Nettoyage : archiver la demande de devis puis l'incident
+  // 13. Ouvrir une demande de créneaux auprès de l'artisan retenu
+  const createSchedule = await page.request.post("/api/incidents/planification", {
+    data: {
+      organization_id: bien!.organization_id,
+      incident_id: created.id,
+      quote_request_id: quoteRequest.id,
+      accepted_quote_id: recommended!.quote_id,
+      quote_recipient_id: recommended!.recipient_id,
+    },
+  });
+  expect(createSchedule.status(), `POST planification: ${await createSchedule.text()}`).toBe(201);
+  const schedule = (await createSchedule.json()) as { id: string };
+
+  // 14. L'artisan propose ses disponibilités (GERIMMO en exige au moins 3)
+  const slotAt = (daysAhead: number, hour: number) => {
+    const start = new Date();
+    start.setUTCDate(start.getUTCDate() + daysAhead);
+    start.setUTCHours(hour, 0, 0, 0);
+    const end = new Date(start);
+    end.setUTCHours(hour + 2);
+    return { starts_at: start.toISOString(), ends_at: end.toISOString() };
+  };
+  const propose = await page.request.patch(`/api/incidents/planification/${schedule.id}`, {
+    data: {
+      action: "proposer_creneaux",
+      organization_id: bien!.organization_id,
+      artisan_comment: "Disponibilités E2E",
+      slots: [slotAt(7, 9), slotAt(8, 14), slotAt(9, 10)],
+    },
+  });
+  expect(propose.ok(), `PATCH proposer_creneaux: ${await propose.text()}`).toBeTruthy();
+
+  // 15. Retrouver les créneaux proposés
+  const scheduleList = await page.request.get("/api/incidents/planification");
+  expect(scheduleList.ok()).toBeTruthy();
+  const { slots } = (await scheduleList.json()) as {
+    slots: Array<{ id: string; schedule_request_id: string }>;
+  };
+  const ourSlots = slots.filter((slot) => slot.schedule_request_id === schedule.id);
+  expect(ourSlots.length, "Les 3 créneaux proposés doivent être enregistrés.").toBe(3);
+
+  // 16. Le responsable retient directement un créneau (sans passer par le locataire)
+  const accept = await page.request.patch(`/api/incidents/planification/${schedule.id}`, {
+    data: { action: "acceptation_directe", actor_role: "responsable", slot_id: ourSlots[0].id },
+  });
+  expect(accept.ok(), `PATCH acceptation_directe: ${await accept.text()}`).toBeTruthy();
+
+  // 17. Vérifier que le rendez-vous est validé sur le bon créneau
+  const afterSchedule = await page.request.get("/api/incidents/planification");
+  const { requests: scheduleRequests } = (await afterSchedule.json()) as {
+    requests: Array<{ id: string; status: string; selected_slot_id: string | null }>;
+  };
+  const finalSchedule = scheduleRequests.find((item) => item.id === schedule.id);
+  expect(finalSchedule?.status, "La planification doit être validée.").toBe("valide");
+  expect(finalSchedule?.selected_slot_id, "Le créneau retenu doit être enregistré.").toBe(ourSlots[0].id);
+
+  // 18. Nettoyage : archiver la demande de devis puis l'incident
   const archiveQuote = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
     data: { action: "archive" },
   });
