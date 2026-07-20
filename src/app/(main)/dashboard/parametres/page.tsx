@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { Bot, Building2, FileText, MessageCircle, Palette } from "lucide-react";
+import { Building2, FileText, MessageCircle, Palette } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -8,19 +8,13 @@ export default function Page() {
   const sections = [
     {
       title: "Identité de l’agence",
-      description: "Nom, logo, couleurs et coordonnées.",
-      href: "/dashboard/parametres/telegram",
+      description: "Nom, logo, message d’accueil et coordonnées affichés par le bot à vos clients.",
+      href: "/dashboard/parametres/identite",
       icon: Building2,
     },
     {
-      title: "Telegram",
-      description: "Accueil, signature et horaires du bot.",
-      href: "/dashboard/parametres/telegram",
-      icon: Bot,
-    },
-    {
-      title: "WhatsApp",
-      description: "Liaison des comptes et suivi du bot WhatsApp.",
+      title: "Bot WhatsApp",
+      description: "Liaison des comptes et suivi des conversations.",
       href: "/dashboard/parametres/whatsapp",
       icon: MessageCircle,
     },
