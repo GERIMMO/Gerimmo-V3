@@ -14,6 +14,8 @@ export type EmailToSend = {
   text: string;
   /** Version HTML facultative (les modèles d'abonnement en fournissent une). */
   html?: string;
+  /** Pièces jointes (quittances, courriers). Le contenu est encodé en base64 à l'envoi. */
+  attachments?: Array<{ filename: string; content: Buffer }>;
 };
 
 /**
@@ -37,6 +39,14 @@ export async function sendEmail(input: EmailToSend): Promise<{ providerMessageId
       subject: input.subject,
       text: input.text,
       ...(input.html ? { html: input.html } : {}),
+      ...(input.attachments?.length
+        ? {
+            attachments: input.attachments.map((piece) => ({
+              filename: piece.filename,
+              content: piece.content.toString("base64"),
+            })),
+          }
+        : {}),
     }),
   });
 
