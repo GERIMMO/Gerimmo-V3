@@ -432,6 +432,45 @@ async function showOwnerBiens(
   );
 }
 
+/**
+ * Incidents de toute l'organisation, pour les rôles de back-office.
+ *
+ * Ne PAS réutiliser showOwnerIncidents ici : celui-ci part de listOwnerBiens, qui filtre sur
+ * `bien_occupants.occupant_type = 'proprietaire'`. Un administrateur d'agence n'est occupant
+ * d'aucun bien : il aurait obtenu « Aucun incident sur vos biens », ce qui est faux.
+ */
+async function showAgencyIncidents(
+  supabase: AdminClient,
+  adapter: BotChannelAdapter,
+  account: BotAccount,
+  conversation: BotConversation,
+  chatId: number | string,
+) {
+  const incidents = await supabase
+    .from("incidents")
+    .select("number,status,updated_at,biens(reference)")
+    .eq("organization_id", account.organization_id)
+    .is("archived_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(15);
+  if (incidents.error) throw incidents.error;
+
+  const lignes = ((incidents.data ?? []) as Array<Record<string, unknown>>).map((incident) => {
+    const bien = incident.biens as { reference?: string | null } | null;
+    return `${incident.number} - ${bien?.reference ?? "bien"} - ${incident.status}`;
+  });
+
+  await sendAndLog(
+    supabase,
+    adapter,
+    conversation,
+    {
+      text: lignes.length ? `Incidents de l agence :\n${lignes.join("\n")}` : "Aucun incident en cours dans l agence.",
+    },
+    chatId,
+  );
+}
+
 async function showOwnerIncidents(
   supabase: AdminClient,
   adapter: BotChannelAdapter,
@@ -1548,6 +1587,8 @@ export async function processCallback(
     await showOwnerBiens(supabase, adapter, account, conversation, chatId);
   } else if (data === "menu_owner_incidents") {
     await showOwnerIncidents(supabase, adapter, account, conversation, chatId);
+  } else if (data === "menu_agency_incidents") {
+    await showAgencyIncidents(supabase, adapter, account, conversation, chatId);
   } else if (data === "menu_owner_echeances") {
     await showOwnerEcheances(supabase, adapter, account, conversation, chatId);
   } else if (data === "menu_tenant_schedule") {
