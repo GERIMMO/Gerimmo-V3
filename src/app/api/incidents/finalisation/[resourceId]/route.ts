@@ -19,36 +19,43 @@ type RouteContext = {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { resourceId } = await context.params;
-    const body = await request.json();
+    // `type` et `action` servent uniquement à router la requête : les retirer avant de
+    // transmettre le reste aux services, qui écrivent le payload tel quel en base
+    // (une clé de routage laissée dedans est interprétée comme une colonne → erreur 400).
+    const { type, ...payload } = await request.json();
 
-    if (body.type === "rapport") {
-      return NextResponse.json(await updateInterventionReport({ id: resourceId, ...body }));
+    if (type === "rapport") {
+      // `action` est conservé : updateInterventionReport s'en sert pour déduire le statut.
+      return NextResponse.json(await updateInterventionReport({ id: resourceId, ...payload }));
     }
-    if (body.type === "materiau") {
-      return NextResponse.json(await addInterventionMaterial({ intervention_id: resourceId, ...body }), {
+    if (type === "materiau") {
+      return NextResponse.json(await addInterventionMaterial({ intervention_id: resourceId, ...payload }), {
         status: 201,
       });
     }
-    if (body.action === "demarrer") {
+
+    const { action, ...interventionPatch } = payload;
+
+    if (action === "demarrer") {
       return NextResponse.json(await startIntervention(resourceId));
     }
-    if (body.action === "suspendre") {
-      return NextResponse.json(await suspendIntervention(resourceId, body.comment));
+    if (action === "suspendre") {
+      return NextResponse.json(await suspendIntervention(resourceId, payload.comment));
     }
-    if (body.action === "reprendre") {
+    if (action === "reprendre") {
       return NextResponse.json(await resumeIntervention(resourceId));
     }
-    if (body.action === "annuler") {
-      return NextResponse.json(await cancelIntervention(resourceId, body.comment));
+    if (action === "annuler") {
+      return NextResponse.json(await cancelIntervention(resourceId, payload.comment));
     }
-    if (body.action === "reprogrammer") {
-      return NextResponse.json(await reprogramIntervention(resourceId, body.comment));
+    if (action === "reprogrammer") {
+      return NextResponse.json(await reprogramIntervention(resourceId, payload.comment));
     }
-    if (body.action === "terminer") {
-      return NextResponse.json(await completeIntervention({ id: resourceId, ...body }));
+    if (action === "terminer") {
+      return NextResponse.json(await completeIntervention({ id: resourceId, ...interventionPatch }));
     }
 
-    return NextResponse.json(await updateIntervention({ id: resourceId, ...body }));
+    return NextResponse.json(await updateIntervention({ id: resourceId, ...interventionPatch }));
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Action impossible." },
