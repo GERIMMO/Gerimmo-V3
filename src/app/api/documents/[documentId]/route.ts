@@ -38,8 +38,9 @@ export async function GET(_request: Request, { params }: Params) {
 export async function PATCH(request: Request, { params }: Params) {
   try {
     const { documentId } = await params;
-    const body = await request.json();
-    const action = body.action as string | undefined;
+    // `action` ne sert qu'à router : le retirer avant de transmettre le reste, sinon il part
+    // vers PostgREST comme une colonne de documents (qui n'existe pas) → 400.
+    const { action, ...payload } = await request.json();
 
     if (action === "archive") {
       return NextResponse.json(await archiveDocument(documentId));
@@ -50,14 +51,14 @@ export async function PATCH(request: Request, { params }: Params) {
     }
 
     if (action === "version") {
-      return NextResponse.json(await versionDocument({ id: documentId, ...body }));
+      return NextResponse.json(await versionDocument({ id: documentId, ...payload }));
     }
 
     if (action === "send") {
-      return NextResponse.json(await sendDocument({ id: documentId, ...body }));
+      return NextResponse.json(await sendDocument({ id: documentId, ...payload }));
     }
 
-    return NextResponse.json(await updateDocument({ id: documentId, ...body }));
+    return NextResponse.json(await updateDocument({ id: documentId, ...payload }));
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Mise a jour impossible." },
