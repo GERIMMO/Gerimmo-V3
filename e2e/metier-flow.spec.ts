@@ -263,6 +263,10 @@ test("parcours métier : incident → devis → comparatif → planification val
       planned_ends_at: retainedSlot.ends_at,
       execution_mode: "artisan_prive",
       work_description: "Réparation E2E",
+      // Le montant prévu est celui du devis retenu. Facturer un montant différent sans
+      // renseigner difference_reason est refusé par validate_incident_intervention()
+      // (« Un ecart de montant doit etre justifie. »).
+      planned_amount_cents: 45000,
     },
   });
   expect(createIntervention.status(), `POST intervention: ${await createIntervention.text()}`).toBe(201);

@@ -15,25 +15,27 @@ type RouteContext = {
 export async function PATCH(request: Request, context: RouteContext) {
   try {
     const { requestId } = await context.params;
-    const body = await request.json();
+    // `action` ne sert qu'à router : le retirer avant de transmettre le reste, sinon il part
+    // vers PostgREST comme une colonne d'incident_quote_requests (qui n'existe pas) → 400.
+    const { action, ...payload } = await request.json();
 
-    if (body.action === "send") {
+    if (action === "send") {
       return NextResponse.json(await sendQuoteRequest(requestId));
     }
 
-    if (body.action === "archive") {
+    if (action === "archive") {
       return NextResponse.json(await archiveQuoteRequest(requestId));
     }
 
-    if (body.action === "receive") {
-      return NextResponse.json(await receiveQuote({ ...body.quote, quote_request_id: requestId }));
+    if (action === "receive") {
+      return NextResponse.json(await receiveQuote({ ...payload.quote, quote_request_id: requestId }));
     }
 
-    if (body.action === "select") {
-      return NextResponse.json(await selectQuote(body.quote_id));
+    if (action === "select") {
+      return NextResponse.json(await selectQuote(payload.quote_id));
     }
 
-    return NextResponse.json(await updateQuoteRequest({ id: requestId, ...body }));
+    return NextResponse.json(await updateQuoteRequest({ id: requestId, ...payload }));
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : "Modification impossible." },
