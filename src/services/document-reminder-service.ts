@@ -102,6 +102,12 @@ export async function sendDocumentExpiryReminder(input: { documentId: string }) 
   let emailed = false;
   if (recipientProfileId) {
     const profile = await supabase.from("profiles").select("email").eq("id", recipientProfileId).maybeSingle();
+    // Distinguer la panne (erreur, ou profil illisible) du cas métier (destinataire sans
+    // e-mail) : les confondre faisait passer le rappel à la trappe en silence.
+    if (profile.error) throw profile.error;
+    if (!profile.data) {
+      throw new Error("Profil du destinataire introuvable : rappel non envoye.");
+    }
     const email = profile.data?.email as string | null | undefined;
     if (email) {
       const dueLabel = new Date(document.expires_at).toLocaleDateString("fr-FR", {
@@ -122,11 +128,25 @@ export async function sendDocumentExpiryReminder(input: { documentId: string }) 
     }
   }
 
+  // Ne marquer « rappel effectué » QUE si un e-mail est réellement parti. Auparavant la
+  // marque était posée dans tous les cas : l'interface affichait un rappel envoyé, plus
+  // personne ne relançait, et une assurance ou un diagnostic obligatoire pouvait expirer
+  // sans que quiconque ait été prévenu.
+  if (!emailed) {
+    return { documentId: document.id, emailed };
+  }
+
   const update = await supabase
     .from("documents")
     .update({ metadata: { ...(document.metadata ?? {}), expiry_reminded_at: nowIso() } } as never)
-    .eq("id", document.id);
+    .eq("id", document.id)
+    .select("id");
   if (update.error) throw update.error;
+  // Sans ce contrôle, l'inverse se produisait : la marque n'était pas posée et le rappel
+  // repartait à chaque passage de l'automatisation — le destinataire était spammé.
+  if (!update.data?.length) {
+    throw new Error("Rappel envoye mais non trace : il repartirait a chaque passage.");
+  }
 
   return { documentId: document.id, emailed };
 }

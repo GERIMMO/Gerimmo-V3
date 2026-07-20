@@ -158,11 +158,18 @@ async function generateQuittanceForPeriod(supabase: UserClient, period: Confirme
   if (document.error) throw document.error;
   const documentId = (document.data as unknown as { id: string }).id;
 
+  // Sans .select(), un refus de la RLS ne touche aucune ligne SANS lever d'erreur : la
+  // quittance existerait alors en base sans être rattachée à la période, donc introuvable
+  // (validateQuittance répondrait « Aucune quittance à valider » alors qu'elle existe).
   const linked = await supabase
     .from("rent_periods" as never)
     .update({ quittance_document_id: documentId, quittance_status: "a_valider", updated_at: nowIso() } as never)
-    .eq("id", period.id);
+    .eq("id", period.id)
+    .select("id");
   if (linked.error) throw linked.error;
+  if (!linked.data?.length) {
+    throw new Error("Quittance generee mais impossible de la rattacher au loyer.");
+  }
 }
 
 /**
@@ -193,16 +200,31 @@ export async function validateQuittance(input: { periodId: string }) {
     throw new Error("Aucune quittance à valider pour ce loyer.");
   }
 
+  // Le document DOIT devenir actif : c'est ce qui le rend visible au locataire. Un refus
+  // silencieux le laisserait en brouillon pendant qu'on annonce la quittance envoyée — le
+  // locataire recevrait un e-mail renvoyant vers un espace où il n'y a rien.
   const documentUpdate = await supabase
     .from("documents")
     .update({ status: "actif" } as never)
-    .eq("id", period.quittance_document_id);
+    .eq("id", period.quittance_document_id)
+    .select("id");
   if (documentUpdate.error) throw documentUpdate.error;
+  if (!documentUpdate.data?.length) {
+    throw new Error("Impossible d activer la quittance : elle resterait invisible au locataire.");
+  }
 
   let emailed = false;
   if (period.tenant_profile_id) {
     const profile = await supabase.from("profiles").select("email").eq("id", period.tenant_profile_id).maybeSingle();
+    // Le profil du locataire doit être lisible ; s'il ne l'est pas, on échoue plutôt que de
+    // sauter l'envoi en silence (c'était le bug : quittance « validée », jamais reçue).
+    if (profile.error) throw profile.error;
+    if (!profile.data) {
+      throw new Error("Profil du locataire introuvable : quittance non envoyee.");
+    }
     const email = profile.data?.email as string | null | undefined;
+    // Un locataire sans adresse e-mail est un cas métier normal (remise papier) : la
+    // quittance reste disponible dans son espace et le statut final le reflète ('validee').
     if (email) {
       const outbox = await supabase.from("document_email_outbox").insert({
         organization_id: period.organization_id,
@@ -226,8 +248,12 @@ export async function validateQuittance(input: { periodId: string }) {
       quittance_validated_at: nowIso(),
       updated_at: nowIso(),
     } as never)
-    .eq("id", input.periodId);
+    .eq("id", input.periodId)
+    .select("id");
   if (periodUpdate.error) throw periodUpdate.error;
+  if (!periodUpdate.data?.length) {
+    throw new Error("Statut de la quittance non enregistre.");
+  }
   return { periodId: input.periodId, quittance_status: finalStatus, emailed };
 }
 
@@ -238,6 +264,14 @@ async function queueTenantEmail(
 ) {
   if (!input.tenantProfileId) return false;
   const profile = await supabase.from("profiles").select("email").eq("id", input.tenantProfileId).maybeSingle();
+  // Un profil illisible (erreur, ou RLS qui renvoie 0 ligne) n'est PAS la même chose qu'un
+  // locataire sans e-mail : le premier est une panne, le second un cas métier. Confondre les
+  // deux faisait sauter l'envoi en silence — un locataire pouvait être mis en demeure sans
+  // avoir reçu la moindre relance.
+  if (profile.error) throw profile.error;
+  if (!profile.data) {
+    throw new Error("Profil du locataire introuvable : courrier non envoye.");
+  }
   const email = profile.data?.email as string | null | undefined;
   if (!email) return false;
   const outbox = await supabase.from("document_email_outbox").insert({
@@ -329,8 +363,14 @@ export async function sendRentReminder(input: { periodId: string }) {
         ? { status: "mise_en_demeure", mise_en_demeure_at: nowIso(), last_reminder_at: nowIso(), updated_at: nowIso() }
         : { reminder_count: nextNumber, last_reminder_at: nowIso(), updated_at: nowIso() }) as never,
     )
-    .eq("id", input.periodId);
+    .eq("id", input.periodId)
+    .select("id");
   if (periodUpdate.error) throw periodUpdate.error;
+  // Sans ce contrôle, un refus silencieux laissait reminder_count inchangé : le locataire
+  // recevait « Relance 1 » indéfiniment et l'escalade en mise en demeure n'arrivait jamais.
+  if (!periodUpdate.data?.length) {
+    throw new Error("Courrier genere mais suivi de relance non enregistre.");
+  }
 
   return { periodId: input.periodId, miseEnDemeure: isMiseEnDemeure, reminderNumber: nextNumber, emailed };
 }
