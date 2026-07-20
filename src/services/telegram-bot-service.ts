@@ -3,6 +3,7 @@ import { createClient as createUserClient } from "@/lib/supabase/server";
 import { applyBrandIdentity } from "@/services/bot/brand-rules";
 import { resolveBotBrandIdentity } from "@/services/bot/branding";
 import type { BotChannelAdapter } from "@/services/bot/channel";
+import { roleMenu } from "@/services/bot/menus";
 import {
   allowedTenantDocumentTypes,
   classifyMessage,
@@ -294,40 +295,9 @@ export async function getConversation(supabase: AdminClient, account: BotAccount
   return created.data as BotConversation;
 }
 
-export function roleMenu(role: string) {
-  if (role === "artisan") {
-    return {
-      text: "Que souhaitez-vous faire ?",
-      buttons: [
-        [{ text: "Proposer des disponibilites", callbackData: "menu_schedule" }],
-        [{ text: "Repondre a un devis", callbackData: "menu_quotes" }],
-        [{ text: "Mes interventions", callbackData: "menu_interventions" }],
-        [{ text: "Aide", callbackData: "menu_help" }],
-      ],
-    };
-  }
-  if (role === "proprietaire") {
-    return {
-      text: "Que souhaitez-vous faire ?",
-      buttons: [
-        [{ text: "Mes biens", callbackData: "menu_owner_biens" }],
-        [{ text: "Incidents de mes biens", callbackData: "menu_owner_incidents" }],
-        [{ text: "Mes echeances", callbackData: "menu_owner_echeances" }],
-        [{ text: "Aide", callbackData: "menu_help" }],
-      ],
-    };
-  }
-  return {
-    text: "Que souhaitez-vous faire ?",
-    buttons: [
-      [{ text: "Declarer un incident", callbackData: "menu_incident" }],
-      [{ text: "Suivre mes incidents", callbackData: "menu_follow" }],
-      [{ text: "Valider un rendez-vous", callbackData: "menu_tenant_schedule" }],
-      [{ text: "Demander un document", callbackData: "menu_documents" }],
-      [{ text: "Aide", callbackData: "menu_help" }],
-    ],
-  };
-}
+// roleMenu vit desormais dans services/bot/menus.ts (logique pure, donc testable) et reste
+// re-exporte ici pour les appelants existants.
+export { roleMenu };
 
 async function confirmLink(supabase: AdminClient, token: string, user: TelegramUser, chatId: number) {
   const invitation = await supabase
