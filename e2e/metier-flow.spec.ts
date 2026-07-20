@@ -5,8 +5,9 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
 
 /**
  * Parcours métier réel (mutations) : connexion → création d'un incident sur un bien du
- * périmètre → demande de devis à 2 artisans → envoi → réception d'une offre → sélection
- * de l'offre → vérifications → archivage (auto-nettoyage).
+ * périmètre → demande de devis à 2 artisans → envoi → réception des 2 offres →
+ * comparatif (avec recommandation calculée par la base) → sélection de l'offre
+ * recommandée → vérifications → archivage (auto-nettoyage).
  *
  * Règle métier couverte : GERIMMO exige au moins 2 devis pour envoyer une demande, sauf
  * choix explicite d'un artisan privé unique (`allow_single_private_artisan`). Le trigger
@@ -24,7 +25,7 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
  * à cause de la limitation de débit d'authentification Supabase — ce n'est pas une
  * régression. Laisser ~1 min entre deux exécutions rapprochées.
  */
-test("parcours métier : incident → devis envoyé, reçu et retenu, puis archivage", async ({ page }) => {
+test("parcours métier : incident → devis → comparatif → offre retenue, puis archivage", async ({ page }) => {
   test.skip(!E2E_EMAIL || !E2E_PASSWORD, "Identifiants E2E requis (E2E_USER_EMAIL / E2E_USER_PASSWORD).");
 
   // 1. Connexion
@@ -101,34 +102,68 @@ test("parcours métier : incident → devis envoyé, reçu et retenu, puis archi
   const send = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, { data: { action: "send" } });
   expect(send.ok(), `PATCH send devis: ${await send.text()}`).toBeTruthy();
 
-  // 8. Retrouver le destinataire créé avec la demande
+  // 8. Retrouver les destinataires créés avec la demande
   const withRecipients = await page.request.get("/api/incidents/devis");
   const { recipients } = (await withRecipients.json()) as {
-    recipients: Array<{ id: string; quote_request_id: string }>;
+    recipients: Array<{ id: string; quote_request_id: string; artisan_name: string }>;
   };
-  const recipient = recipients.find((item) => item.quote_request_id === quoteRequest.id);
-  expect(recipient, "Le destinataire de la demande de devis doit exister.").toBeTruthy();
+  const ourRecipients = recipients.filter((item) => item.quote_request_id === quoteRequest.id);
+  expect(ourRecipients.length, "Les 2 artisans destinataires doivent exister.").toBe(2);
 
-  // 9. L'artisan renvoie une offre chiffrée
-  const receive = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
-    data: {
-      action: "receive",
-      quote: {
-        organization_id: bien!.organization_id,
-        recipient_id: recipient!.id,
-        amount_cents: 45000,
+  // 9. Chaque artisan renvoie une offre chiffrée
+  const offers: Array<{ id: string; recipient_id: string; amount_cents: number; received_at: string }> = [];
+  for (const [index, artisan] of ourRecipients.entries()) {
+    const receive = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
+      data: {
+        action: "receive",
+        quote: {
+          organization_id: bien!.organization_id,
+          recipient_id: artisan.id,
+          amount_cents: 45000 + index * 7000,
+        },
       },
+    });
+    expect(receive.ok(), `PATCH receive devis: ${await receive.text()}`).toBeTruthy();
+    offers.push(await receive.json());
+  }
+  expect(offers.length, "Deux offres doivent avoir été reçues.").toBe(2);
+
+  // 10. Construire le comparatif des deux offres (déclenche le calcul de recommandation)
+  const createComparison = await page.request.post("/api/incidents/devis/comparatif", {
+    data: {
+      organization_id: bien!.organization_id,
+      quote_request_id: quoteRequest.id,
+      items: offers.map((offer, index) => ({
+        quote_id: offer.id,
+        recipient_id: offer.recipient_id,
+        artisan_name: ourRecipients[index].artisan_name,
+        price_cents: offer.amount_cents,
+        received_at: offer.received_at,
+        gerimmo_rating: index === 0 ? 5 : 3,
+        administrative_documents_valid: true,
+      })),
     },
   });
-  expect(receive.ok(), `PATCH receive devis: ${await receive.text()}`).toBeTruthy();
-  const quote = (await receive.json()) as { id: string };
-  expect(quote.id, "L'offre reçue doit avoir un identifiant.").toBeTruthy();
+  expect(createComparison.status(), `POST comparatif: ${await createComparison.text()}`).toBe(201);
+  const comparison = (await createComparison.json()) as { id: string };
 
-  // 10. Retenir cette offre
+  // 11. Vérifier que le comparatif contient les 2 offres et qu'une recommandation est calculée
+  const comparisonList = await page.request.get("/api/incidents/devis/comparatif");
+  expect(comparisonList.ok()).toBeTruthy();
+  const { items: comparisonItems } = (await comparisonList.json()) as {
+    items: Array<{ comparison_id: string; quote_id: string; is_recommended: boolean; recommendation_score: number }>;
+  };
+  const ourItems = comparisonItems.filter((item) => item.comparison_id === comparison.id);
+  expect(ourItems.length, "Le comparatif doit contenir les 2 offres.").toBe(2);
+  const recommended = ourItems.find((item) => item.is_recommended);
+  expect(recommended, "Une offre doit être recommandée automatiquement.").toBeTruthy();
+
+  // 12. Retenir l'offre recommandée
   const select = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
-    data: { action: "select", quote_id: quote.id },
+    data: { action: "select", quote_id: recommended!.quote_id },
   });
   expect(select.ok(), `PATCH select devis: ${await select.text()}`).toBeTruthy();
+  const quote = { id: recommended!.quote_id };
 
   // 11. Vérifier que la demande et l'offre sont bien passées en "retenu"
   const afterSelect = await page.request.get("/api/incidents/devis");
