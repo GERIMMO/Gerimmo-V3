@@ -1,5 +1,6 @@
 import { sendEmail } from "@/lib/email/resend";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { telechargerDocument } from "@/services/rent/quittance-document";
 
 /**
  * Vidage de la file d'e-mails métier (`document_email_outbox`).
@@ -19,13 +20,39 @@ export type EmailDispatchResult = {
   failures: Array<{ id: string; message: string }>;
 };
 
-type OutboxRow = { id: string; recipient_email: string; subject: string; body: string | null };
+type OutboxRow = {
+  id: string;
+  recipient_email: string;
+  subject: string;
+  body: string | null;
+  document_id: string | null;
+};
+
+/**
+ * Pièce jointe correspondant au document lié à l'e-mail, lorsqu'un fichier existe.
+ *
+ * Une quittance annoncée dans le corps du message mais absente en pièce jointe oblige le
+ * locataire à se connecter pour rien : on joint le fichier quand il est disponible.
+ */
+async function pieceJointeDuDocument(admin: ReturnType<typeof createAdminClient>, documentId: string | null) {
+  if (!documentId) return undefined;
+  const { data, error } = await admin
+    .from("documents")
+    .select("storage_path,file_name")
+    .eq("id", documentId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.storage_path) return undefined;
+
+  const fichier = await telechargerDocument(data.storage_path);
+  return [{ filename: data.file_name ?? "document.pdf", content: fichier }];
+}
 
 export async function dispatchPendingEmails(limit = 50): Promise<EmailDispatchResult> {
   const admin = createAdminClient();
   const pending = await admin
     .from("document_email_outbox")
-    .select("id,recipient_email,subject,body")
+    .select("id,recipient_email,subject,body,document_id")
     .eq("status", "pret")
     .is("archived_at", null)
     .order("created_at", { ascending: true })
@@ -42,6 +69,7 @@ export async function dispatchPendingEmails(limit = 50): Promise<EmailDispatchRe
         to: email.recipient_email,
         subject: email.subject,
         text: email.body ?? "",
+        attachments: await pieceJointeDuDocument(admin, email.document_id),
       });
 
       const marked = await admin

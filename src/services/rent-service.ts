@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { genererQuittancePdf } from "@/services/rent/quittance-document";
 
 type UserClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -91,6 +92,9 @@ type ConfirmedPeriod = {
   tenant_profile_id: string | null;
   tenant_name: string | null;
   amount_cents: number;
+  /** Loyer hors charges. Les échéances antérieures au détail portent le total ici. */
+  rent_cents: number | null;
+  charges_cents: number;
   period_month: string;
   status: RentPeriodStatus;
 };
@@ -113,7 +117,9 @@ export async function confirmRent(input: { periodId: string; received: boolean }
     } as never)
     .eq("id", input.periodId)
     .eq("status", "attendu")
-    .select("id,organization_id,bien_id,tenant_profile_id,tenant_name,amount_cents,period_month,status")
+    .select(
+      "id,organization_id,bien_id,tenant_profile_id,tenant_name,amount_cents,rent_cents,charges_cents,period_month,status",
+    )
     .single();
   if (error) throw error;
   const period = data as unknown as ConfirmedPeriod;
@@ -157,6 +163,39 @@ async function generateQuittanceForPeriod(supabase: UserClient, period: Confirme
     .single();
   if (document.error) throw document.error;
   const documentId = (document.data as unknown as { id: string }).id;
+
+  // Produire le fichier PDF et le déposer dans le stockage. Jusqu'ici la quittance annonçait
+  // un PDF (mime_type, chemin) qui n'existait pas : le locataire ne téléchargeait rien.
+  const reference = `QUIT-${period.period_month.replace(/-/g, "").slice(0, 6)}-${period.id.slice(0, 8)}`;
+  const storagePath = `quittances/${period.organization_id}/${reference}.pdf`;
+  const fichier = await genererQuittancePdf({
+    periodId: period.id,
+    organizationId: period.organization_id,
+    bienId: period.bien_id,
+    tenantName: period.tenant_name,
+    periodMonth: period.period_month,
+    // Les échéances créées avant le détail loyer/charges n'ont que le total : il est alors
+    // porté par le loyer, jamais inventé en charges.
+    rentCents: period.rent_cents ?? period.amount_cents,
+    chargesCents: period.charges_cents,
+    dateReglement: new Date(),
+    reference,
+    storagePath,
+  });
+
+  const fichierEnregistre = await supabase
+    .from("documents")
+    .update({
+      storage_path: fichier.storagePath,
+      file_name: `${reference}.pdf`,
+      file_size_bytes: fichier.taille,
+    } as never)
+    .eq("id", documentId)
+    .select("id");
+  if (fichierEnregistre.error) throw fichierEnregistre.error;
+  if (!fichierEnregistre.data?.length) {
+    throw new Error("Quittance generee mais le fichier n a pas pu etre rattache au document.");
+  }
 
   // Sans .select(), un refus de la RLS ne touche aucune ligne SANS lever d'erreur : la
   // quittance existerait alors en base sans être rattachée à la période, donc introuvable
