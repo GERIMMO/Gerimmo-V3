@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/production-health",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/automations",
+      "schedule": "0 7 * * *"
     }
   ]
 }
