@@ -261,10 +261,29 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     .insert({ stripe_event_id: event.id, event_type: event.type, payload: event as unknown as Record<string, unknown> })
     .select("id")
     .maybeSingle();
-  if (inserted.error?.code === "23505") return { duplicate: true };
-  if (inserted.error || !inserted.data) throw inserted.error;
+
+  // Un événement déjà connu (Stripe rejoue, ou on le renvoie à la main) viole la contrainte
+  // d'unicité. On ne peut pas s'arrêter là pour autant : un événement en ÉCHEC doit pouvoir
+  // être rejoué, sinon la moindre panne passagère devient définitive et Stripe a beau
+  // renvoyer l'événement, il est écarté comme doublon. Seul un événement déjà traité avec
+  // succès est ignoré.
+  let eventRowId: string;
+  if (inserted.error?.code === "23505") {
+    const existing = await admin
+      .from("stripe_webhook_events")
+      .select("id,status")
+      .eq("stripe_event_id", event.id)
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data || existing.data.status === "processed") return { duplicate: true };
+    eventRowId = existing.data.id;
+  } else {
+    if (inserted.error || !inserted.data) throw inserted.error;
+    eventRowId = inserted.data.id;
+  }
+
   try {
-    await admin.from("stripe_webhook_events").update({ status: "processing", attempts: 1 }).eq("id", inserted.data.id);
+    await admin.from("stripe_webhook_events").update({ status: "processing" }).eq("id", eventRowId);
     if (event.type.startsWith("customer.subscription.")) {
       const subscription = event.data.object as Stripe.Subscription;
 
@@ -399,13 +418,13 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     await admin
       .from("stripe_webhook_events")
       .update({ status: "processed", processed_at: new Date().toISOString() })
-      .eq("id", inserted.data.id);
+      .eq("id", eventRowId);
     return { processed: true };
   } catch (error) {
     await admin
       .from("stripe_webhook_events")
       .update({ status: "failed", last_error: error instanceof Error ? error.message : "Erreur Stripe" })
-      .eq("id", inserted.data.id);
+      .eq("id", eventRowId);
     throw error;
   }
 }
