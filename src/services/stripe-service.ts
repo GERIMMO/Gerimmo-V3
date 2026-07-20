@@ -32,10 +32,18 @@ export async function createCheckout(organizationId: string, planId: string, ema
     {
       mode: "subscription",
       customer: customerId,
-      line_items: [{ price: plan.data.stripe_price_id, quantity: 1 }],
+      // Les frais de mise en place sont un tarif « one-time » : dans un paiement en mode
+      // abonnement, Stripe les ajoute à la première facture. Ils étaient affichés au client
+      // sans jamais être encaissés.
+      line_items: [
+        { price: plan.data.stripe_price_id, quantity: 1 },
+        ...(plan.data.stripe_setup_price_id ? [{ price: plan.data.stripe_setup_price_id, quantity: 1 }] : []),
+      ],
       subscription_data: {
         trial_period_days: plan.data.trial_days,
-        metadata: { organization_id: organizationId, plan_id: planId },
+        // `kind` distingue l'abonnement mensuel de l'abonnement annuel créé ensuite : sans
+        // lui, la création du second déclencherait à son tour la création d'un troisième.
+        metadata: { organization_id: organizationId, plan_id: planId, kind: "monthly" },
       },
       success_url: `${origin}/dashboard/abonnement?checkout=success`,
       cancel_url: `${origin}/dashboard/abonnement?checkout=cancelled`,
@@ -101,6 +109,46 @@ async function findOrganizationForStripeSubscription(
   return byCustomer.data?.organization_id ?? null;
 }
 
+/**
+ * Ouvre l'abonnement annuel « gestion » qui accompagne l'abonnement mensuel.
+ *
+ * Stripe interdit de mélanger plusieurs rythmes de facturation dans un même abonnement :
+ * la gestion annuelle est donc un abonnement distinct, rattaché au même client et au même
+ * moyen de paiement (enregistré lors du paiement initial).
+ *
+ * Sa fin d'essai est alignée sur celle du mensuel : le client ne paie rien pendant l'essai.
+ * La clé d'idempotence évite tout doublon si Stripe rejoue l'événement.
+ */
+async function ensureAnnualSubscription(
+  admin: ReturnType<typeof createAdminClient>,
+  stripe: ReturnType<typeof getStripe>,
+  monthly: Stripe.Subscription,
+) {
+  const planId = monthly.metadata.plan_id;
+  if (!planId) return;
+
+  const plan = await admin.from("subscription_plans").select("stripe_annual_price_id").eq("id", planId).maybeSingle();
+  if (plan.error) throw plan.error;
+  const annualPriceId = plan.data?.stripe_annual_price_id;
+  if (!annualPriceId) return; // Offre sans gestion annuelle : rien à facturer.
+
+  const customerId = typeof monthly.customer === "string" ? monthly.customer : monthly.customer.id;
+  await stripe.subscriptions.create(
+    {
+      customer: customerId,
+      items: [{ price: annualPriceId, quantity: 1 }],
+      trial_end: monthly.trial_end ?? undefined,
+      metadata: {
+        organization_id: monthly.metadata.organization_id ?? "",
+        plan_id: planId,
+        kind: "annual",
+        monthly_subscription_id: monthly.id,
+      },
+    },
+    { idempotencyKey: `annual:${monthly.id}` },
+  );
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
   const event = stripe.webhooks.constructEvent(rawBody, signature, getStripeWebhookSecret());
@@ -116,42 +164,55 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     await admin.from("stripe_webhook_events").update({ status: "processing", attempts: 1 }).eq("id", inserted.data.id);
     if (event.type.startsWith("customer.subscription.")) {
       const subscription = event.data.object as Stripe.Subscription;
-      // metadata.organization_id n'est posé qu'au paiement initial (subscription_data.metadata).
-      // Un abonnement créé depuis le tableau de bord Stripe, migré, ou recréé lors d'un
-      // changement de formule arrive donc SANS. Auparavant le bloc était simplement sauté et
-      // l'événement marqué « traité » : une résiliation ou un échec de paiement n'était jamais
-      // répercuté (accès maintenu sans paiement), et rien ne le signalait. On retrouve
-      // désormais l'organisation par l'abonnement puis par le client Stripe, et à défaut on
-      // échoue bruyamment — l'événement passe en « failed » et Stripe le rejouera.
-      const organizationId =
-        subscription.metadata.organization_id ??
-        (await findOrganizationForStripeSubscription(admin, subscription.id, subscription.customer));
-      if (!organizationId) {
-        throw new Error(
-          `Abonnement Stripe ${subscription.id} rattache a aucune organisation connue (metadata absente).`,
-        );
-      }
-      {
-        const period = subscription.items.data[0]?.current_period_end;
-        const applied = await admin
-          .from("organization_subscriptions")
-          .update({
-            stripe_subscription_id: subscription.id,
-            status: mapSubscriptionStatus(subscription.status),
-            current_period_start: subscription.items.data[0]?.current_period_start
-              ? new Date(subscription.items.data[0].current_period_start * 1000).toISOString()
-              : null,
-            current_period_end: period ? new Date(period * 1000).toISOString() : null,
-            next_invoice_at: period ? new Date(period * 1000).toISOString() : null,
-            cancelled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
-          })
-          .eq("organization_id", organizationId)
-          .select("id");
-        if (applied.error) throw applied.error;
-        if (!applied.data?.length) {
+
+      // L'abonnement annuel (gestion) est un abonnement Stripe DISTINCT du mensuel. Il ne
+      // doit pas écraser organization_subscriptions, dont stripe_subscription_id désigne
+      // l'abonnement principal — sinon les résiliations du mensuel ne seraient plus suivies.
+      if (subscription.metadata.kind !== "annual") {
+        // À la création du mensuel, ouvrir l'abonnement annuel correspondant. Le garde
+        // `kind === "monthly"` évite la récursion : la création de l'annuel émet elle aussi
+        // un customer.subscription.created.
+        if (event.type === "customer.subscription.created" && subscription.metadata.kind === "monthly") {
+          await ensureAnnualSubscription(admin, stripe, subscription);
+        }
+
+        // metadata.organization_id n'est posé qu'au paiement initial (subscription_data.metadata).
+        // Un abonnement créé depuis le tableau de bord Stripe, migré, ou recréé lors d'un
+        // changement de formule arrive donc SANS. Auparavant le bloc était simplement sauté et
+        // l'événement marqué « traité » : une résiliation ou un échec de paiement n'était jamais
+        // répercuté (accès maintenu sans paiement), et rien ne le signalait. On retrouve
+        // désormais l'organisation par l'abonnement puis par le client Stripe, et à défaut on
+        // échoue bruyamment — l'événement passe en « failed » et Stripe le rejouera.
+        const organizationId =
+          subscription.metadata.organization_id ??
+          (await findOrganizationForStripeSubscription(admin, subscription.id, subscription.customer));
+        if (!organizationId) {
           throw new Error(
-            `Abonnement Stripe ${subscription.id} : aucune ligne mise a jour pour l organisation ${organizationId}.`,
+            `Abonnement Stripe ${subscription.id} rattache a aucune organisation connue (metadata absente).`,
           );
+        }
+        {
+          const period = subscription.items.data[0]?.current_period_end;
+          const applied = await admin
+            .from("organization_subscriptions")
+            .update({
+              stripe_subscription_id: subscription.id,
+              status: mapSubscriptionStatus(subscription.status),
+              current_period_start: subscription.items.data[0]?.current_period_start
+                ? new Date(subscription.items.data[0].current_period_start * 1000).toISOString()
+                : null,
+              current_period_end: period ? new Date(period * 1000).toISOString() : null,
+              next_invoice_at: period ? new Date(period * 1000).toISOString() : null,
+              cancelled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000).toISOString() : null,
+            })
+            .eq("organization_id", organizationId)
+            .select("id");
+          if (applied.error) throw applied.error;
+          if (!applied.data?.length) {
+            throw new Error(
+              `Abonnement Stripe ${subscription.id} : aucune ligne mise a jour pour l organisation ${organizationId}.`,
+            );
+          }
         }
       }
     }
