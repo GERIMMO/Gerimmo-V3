@@ -12,6 +12,8 @@ export type EmailToSend = {
   subject: string;
   /** Corps en texte brut : les messages métier (quittances, relances) sont rédigés ainsi. */
   text: string;
+  /** Version HTML facultative (les modèles d'abonnement en fournissent une). */
+  html?: string;
 };
 
 /**
@@ -29,7 +31,13 @@ export async function sendEmail(input: EmailToSend): Promise<{ providerMessageId
   const response = await fetch(RESEND_ENDPOINT, {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-    body: JSON.stringify({ from, to: [input.to], subject: input.subject, text: input.text }),
+    body: JSON.stringify({
+      from,
+      to: [input.to],
+      subject: input.subject,
+      text: input.text,
+      ...(input.html ? { html: input.html } : {}),
+    }),
   });
 
   if (!response.ok) {

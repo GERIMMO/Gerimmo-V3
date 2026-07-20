@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireSuperAdmin } from "@/services/administration-service";
 import { planDailyAutomations } from "@/services/automations/daily-plan";
+import { dispatchLifecycleEmails } from "@/services/automations/lifecycle-emails";
 import { dispatchPendingEmails } from "@/services/email-dispatch-service";
 
 /**
@@ -34,7 +35,14 @@ async function runAutomations() {
     report.documentRemindersQueued = data;
   }
 
+  // Cycle de vie des abonnements : suspend les essais échus, puis envoie les e-mails
+  // correspondants (fin d'essai, paiement accepté ou refusé).
+  const lifecycle = await admin.rpc("evaluate_subscription_lifecycle");
+  if (lifecycle.error) throw lifecycle.error;
+  report.subscriptionsSuspended = lifecycle.data;
+
   if (plan.dispatchEmails) {
+    report.lifecycleEmails = await dispatchLifecycleEmails();
     report.emails = await dispatchPendingEmails();
   }
 
