@@ -1,4 +1,27 @@
-# 05 — Workflows n8n (état réel + guide d'activation)
+# 05 — Envoi des e-mails métier (+ archives n8n)
+
+> ## ⚠️ DÉCISION 2026-07-20 : n8n n'est plus le chemin retenu.
+>
+> Les e-mails métier sont désormais **envoyés par l'application elle-même** :
+> - envoi via **Resend** (`src/lib/email/resend.ts`), avec le domaine gerimmo.app déjà vérifié ;
+> - vidage de la file `document_email_outbox` par `dispatchPendingEmails()` (`src/services/email-dispatch-service.ts`) ;
+> - déclenchement par **Vercel Cron** : `GET /api/cron/automations` (une fois par jour, cf. `vercel.json`),
+>   qui génère les loyers le 1er, met en file les rappels de documents, puis envoie les e-mails en attente ;
+> - déclenchement manuel possible : `POST /api/cron/automations` par un super administrateur connecté.
+>
+> **Pourquoi** : la documentation ci-dessous constatait elle-même que n8n « se contente d'orchestrer l'envoi
+> d'e-mails », que son hébergement n'était pas localisé, et que les 8 workflows étaient déclenchés par webhook
+> alors que l'app expose des endpoints de *tirage* — incompatibilité à réécrire. Un service externe de plus à
+> héberger, payer et surveiller, pour une tâche que trois fichiers couvrent, ne se justifiait pas.
+>
+> **Variables requises (Vercel)** : `RESEND_API_KEY`, `EMAIL_FROM`, `CRON_SECRET` (ce dernier existe déjà pour
+> `/api/cron/production-health`).
+>
+> Les endpoints `/api/automations/business` et `/api/automations/rent` restent en place : ils fonctionnent et
+> permettraient de rebrancher n8n plus tard sans rien réécrire. La suite de ce document décrit ce modèle n8n,
+> conservée comme référence.
+
+---
 
 > Statut au 2026-07-18 : **PRÉPARÉ, NON ACTIVÉ.** Les 8 workflows existent (`n8n/workflows/*.json`) mais sont `active: false`.
 > n8n n'est pas critique : l'app fonctionne sans lui. Il ne gère que les **e-mails/relances** liés aux abonnements.
