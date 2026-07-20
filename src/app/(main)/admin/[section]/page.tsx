@@ -10,6 +10,7 @@ import { ContractorValidationConsole } from "@/app/(main)/admin/_components/cont
 import { IntegrationCasesConsole } from "@/app/(main)/admin/_components/integration-cases-console";
 import { RunAutomationsCard } from "@/app/(main)/admin/_components/run-automations-card";
 import { SupervisionCenter } from "@/app/(main)/admin/_components/supervision-center";
+import { SyncStripePricesCard } from "@/app/(main)/admin/_components/sync-stripe-prices-card";
 import { ActionCenter } from "@/app/(main)/dashboard/a-faire/_components/action-center";
 import { SuperAdminConsole } from "@/app/(main)/dashboard/super-admin/_components/super-admin-console";
 import { ArticlesConsole } from "@/app/(main)/dashboard/super-admin/articles/_components/articles-console";
@@ -69,7 +70,7 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
   if (
     [
       "subscriptions",
-      "offers",
+      // "offers" est traité plus bas : la section reçoit en plus la synchronisation Stripe.
       "promotion-codes",
       "revenue",
       "payments",
@@ -102,8 +103,17 @@ export default async function AdminSectionPage({ params, searchParams }: AdminSe
   }
   if (["bot-configuration", "telegram"].includes(section)) return <TelegramPage />;
 
-  // Le déclenchement manuel des automatisations a sa place ici, au-dessus du suivi des
-  // exécutions — c'est là qu'on vient le chercher.
+  // La synchronisation des tarifs Stripe a sa place avec la grille d'offres.
+  if (section === "offers") {
+    return (
+      <div className="flex flex-col gap-4">
+        <SyncStripePricesCard />
+        <AdminFunctionalModule initialPayload={await getAdminFunctionalPayload(section)} />
+      </div>
+    );
+  }
+
+  // Le déclenchement manuel a sa place au-dessus du suivi des exécutions.
   if (section === "automations") {
     return (
       <div className="flex flex-col gap-4">
