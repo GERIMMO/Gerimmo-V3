@@ -1,4 +1,21 @@
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+
+import {
+  assainir,
+  BLANC,
+  BLEU,
+  BLEU_PALE,
+  CONTENU,
+  ENCRE,
+  formaterEuros,
+  formaterEurosTexte,
+  GRIS,
+  HAUTEUR,
+  LARGEUR,
+  LIGNE,
+  MARGE,
+  outilsDePage,
+} from "./mise-en-page.ts";
 
 /**
  * Quittance de loyer au format PDF.
@@ -11,8 +28,7 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
  *  - la remise gratuite ;
  *  - la mention annulant les reçus antérieurs en cas de paiement partiel.
  *
- * Logique volontairement PURE : elle ne lit rien en base et ne dépend d'aucun client. Elle
- * reçoit des données déjà mises en forme et rend un PDF, ce qui la rend testable.
+ * Logique volontairement PURE : elle ne lit rien en base et ne dépend d'aucun client.
  */
 
 export type PartieQuittance = {
@@ -38,58 +54,6 @@ export type QuittanceData = {
   lieuEtDate: string;
 };
 
-const MARGE = 52;
-const LARGEUR = 595.28; // A4 en points
-const HAUTEUR = 841.89;
-const CONTENU = LARGEUR - MARGE * 2;
-
-// Palette sobre : un document officiel doit inspirer confiance, pas attirer l'œil.
-const ENCRE = rgb(0.11, 0.13, 0.18);
-const GRIS = rgb(0.42, 0.45, 0.5);
-const BLEU = rgb(0.14, 0.29, 0.49);
-const BLEU_PALE = rgb(0.93, 0.95, 0.98);
-const LIGNE = rgb(0.85, 0.87, 0.9);
-const BLANC = rgb(1, 1, 1);
-
-/**
- * Les polices standard PDF utilisent l'encodage WinAnsi : il couvre les accents français
- * (é, è, à, ç, ù) mais PAS les apostrophes et tirets typographiques, qui feraient échouer la
- * génération. Seuls ces derniers sont donc remplacés — les accents sont conservés, un
- * document officiel sans accents faisant négligé.
- */
-export function assainirPourTest(texte: string) {
-  return assainir(texte);
-}
-
-function assainir(texte: string) {
-  return (
-    texte
-      .replace(/[‘’]/g, "'")
-      .replace(/[“”]/g, '"')
-      .replace(/[–—]/g, "-")
-      // Espaces insécables désignées par leur code : écrites littéralement, le formateur les
-      // réunit en « [ {2}] », qui dans une classe de caractères signifie « espace, accolade,
-      // CHIFFRE 2, accolade » — et efface donc tous les 2 du document.
-      .replace(/[  ]/g, " ")
-  );
-}
-
-export function formaterEuros(cents: number) {
-  return `${(cents / 100).toFixed(2).replace(".", ",")} \u20AC`;
-}
-
-/**
- * Montant destiné à une phrase, et non à une colonne de chiffres.
- *
- * Le symbole « € » n'a pas de largeur déclarée dans les métriques des polices standard PDF :
- * placé au milieu d'un texte, il chevauche le mot suivant. Il reste donc réservé au tableau,
- * où il termine la ligne — et la prose écrit « euros », qui est de toute façon la formulation
- * d'usage sur un document officiel.
- */
-export function formaterEurosTexte(cents: number) {
-  return `${(cents / 100).toFixed(2).replace(".", ",")} euros`;
-}
-
 export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   pdf.setTitle(`Quittance de loyer ${data.reference}`);
@@ -100,23 +64,7 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   const normale = await pdf.embedFont(StandardFonts.Helvetica);
   const grasse = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  const texte = (
-    contenu: string,
-    x: number,
-    y: number,
-    options: { taille?: number; gras?: boolean; couleur?: typeof ENCRE } = {},
-  ) => {
-    page.drawText(assainir(contenu), {
-      x,
-      y,
-      size: options.taille ?? 10,
-      font: options.gras ? grasse : normale,
-      color: options.couleur ?? ENCRE,
-    });
-  };
-
-  const largeurTexte = (contenu: string, taille: number, gras = false) =>
-    (gras ? grasse : normale).widthOfTextAtSize(assainir(contenu), taille);
+  const { texte, largeurTexte } = outilsDePage(page, normale, grasse);
 
   // ── Bandeau d'en-tête : LE LOGEMENT ───────────────────────────────────────────────
   // C'est le logement qui identifie la quittance au premier coup d'œil, pas le bailleur.

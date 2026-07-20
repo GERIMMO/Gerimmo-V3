@@ -1,4 +1,7 @@
+import { objetMiseEnDemeure } from "@/lib/pdf/mise-en-demeure";
+import { objetRelance } from "@/lib/pdf/relance-loyer";
 import { createClient } from "@/lib/supabase/server";
+import { contactGestionnaire, genererCourrierImpaye, jourMois } from "@/services/rent/courrier-document";
 import { genererQuittancePdf } from "@/services/rent/quittance-document";
 
 type UserClient = Awaited<ReturnType<typeof createClient>>;
@@ -330,9 +333,13 @@ type ImpayePeriod = {
   organization_id: string;
   bien_id: string;
   tenant_profile_id: string | null;
+  tenant_name?: string | null;
   period_month: string;
+  due_date: string;
+  amount_cents: number;
   status: RentPeriodStatus;
   reminder_count: number;
+  last_reminder_at: string | null;
 };
 
 /**
@@ -347,7 +354,9 @@ export async function sendRentReminder(input: { periodId: string }) {
 
   const result = await supabase
     .from("rent_periods" as never)
-    .select("id,organization_id,bien_id,tenant_profile_id,period_month,status,reminder_count")
+    .select(
+      "id,organization_id,bien_id,tenant_profile_id,period_month,due_date,amount_cents,status,reminder_count,last_reminder_at",
+    )
     .eq("id", input.periodId)
     .maybeSingle();
   if (result.error) throw result.error;
@@ -362,6 +371,8 @@ export async function sendRentReminder(input: { periodId: string }) {
   const title = isMiseEnDemeure ? `Mise en demeure - loyer ${label}` : `Relance ${nextNumber} - loyer ${label}`;
   const prefix = isMiseEnDemeure ? "MED" : "REL";
 
+  const reference = `${prefix}-${period.period_month.replace(/-/g, "").slice(0, 6)}-${period.id.slice(0, 8)}-${nextNumber}`;
+
   const document = await supabase
     .from("documents")
     .insert({
@@ -369,7 +380,7 @@ export async function sendRentReminder(input: { periodId: string }) {
       bien_id: period.bien_id,
       tenant_profile_id: period.tenant_profile_id,
       title,
-      reference: `${prefix}-${period.period_month.replace(/-/g, "").slice(0, 6)}-${period.id.slice(0, 8)}-${nextNumber}`,
+      reference,
       document_type: "courrier",
       status: "actif",
       visibility: "locataire",
@@ -385,15 +396,66 @@ export async function sendRentReminder(input: { periodId: string }) {
   if (document.error) throw document.error;
   const documentId = (document.data as unknown as { id: string }).id;
 
+  // Le courrier PDF : un e-mail seul ne laisse aucune trace du document exact envoyé.
+  const fichier = await genererCourrierImpaye(
+    isMiseEnDemeure ? "mise_en_demeure" : ((nextNumber === 1 ? 1 : 2) as 1 | 2),
+    {
+      organizationId: period.organization_id,
+      bienId: period.bien_id,
+      tenantName: period.tenant_name ?? null,
+      echeances: [{ periodMonth: period.period_month, dueDate: period.due_date, montantCents: period.amount_cents }],
+      relancesLe: period.last_reminder_at ? [jourMois(new Date(period.last_reminder_at))] : [],
+      reference,
+      storagePath: `courriers/${period.organization_id}/${reference}.pdf`,
+    },
+  );
+
+  const fichierEnregistre = await supabase
+    .from("documents")
+    .update({
+      storage_path: fichier.storagePath,
+      file_name: `${reference}.pdf`,
+      file_size_bytes: fichier.taille,
+    } as never)
+    .eq("id", documentId)
+    .select("id");
+  if (fichierEnregistre.error) throw fichierEnregistre.error;
+  if (!fichierEnregistre.data?.length) {
+    throw new Error("Courrier genere mais le fichier n a pas pu etre rattache au document.");
+  }
+
+  const objet = isMiseEnDemeure ? objetMiseEnDemeure(label) : objetRelance(nextNumber === 1 ? 1 : 2, label);
   const emailed = await queueTenantEmail(supabase, {
     organizationId: period.organization_id,
     documentId,
     tenantProfileId: period.tenant_profile_id,
-    subject: isMiseEnDemeure ? `Mise en demeure - loyer ${label}` : `Relance loyer ${label}`,
+    subject: objet,
     body: isMiseEnDemeure
-      ? "Bonjour,\n\nMalgré nos relances, votre loyer reste impayé. Vous êtes mis en demeure de régulariser votre situation. Ce courrier est disponible dans votre espace GERIMMO."
-      : "Bonjour,\n\nSauf erreur de notre part, votre loyer n'a pas été réglé. Merci de régulariser rapidement. Ce courrier est disponible dans votre espace GERIMMO.",
+      ? "Bonjour,\n\nVous trouverez ci-joint une mise en demeure relative au loyer resté impayé malgré nos relances. Elle est également disponible dans votre espace GERIMMO.\n\nSi votre règlement a été effectué entre-temps, merci de nous en informer sans délai."
+      : "Bonjour,\n\nVous trouverez ci-joint un courrier relatif au loyer resté impayé à ce jour. Il est également disponible dans votre espace GERIMMO.\n\nSi votre règlement a été effectué entre-temps, merci de ne pas en tenir compte.",
   });
+
+  // Alerte au gestionnaire : la mise en demeure doit partir en recommandé, ce que
+  // l'application ne peut pas faire. Sans ce message, personne ne saurait qu'il faut agir.
+  if (isMiseEnDemeure) {
+    const gestionnaire = await contactGestionnaire(period.organization_id);
+    if (gestionnaire) {
+      const alerte = await supabase.from("document_email_outbox").insert({
+        organization_id: period.organization_id,
+        document_id: documentId,
+        recipient_email: gestionnaire.email,
+        subject: `Action requise : mise en demeure à envoyer en recommandé — ${label}`,
+        body:
+          `Une mise en demeure vient d'être émise pour le loyer ${label} et adressée par e-mail au locataire.\n\n` +
+          "Un e-mail a une valeur de preuve faible : imprimez le courrier ci-joint et envoyez-le en lettre " +
+          "recommandée avec accusé de réception. C'est cet envoi qui établira la date de réception.\n\n" +
+          "Si le bail comporte une clause résolutoire, l'acte qui ouvre le délai légal de deux mois est un " +
+          "commandement de payer délivré par un commissaire de justice.",
+        status: "pret",
+      } as never);
+      if (alerte.error) throw alerte.error;
+    }
+  }
 
   const periodUpdate = await supabase
     .from("rent_periods" as never)
