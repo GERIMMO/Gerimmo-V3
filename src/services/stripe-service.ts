@@ -2,6 +2,7 @@ import type Stripe from "stripe";
 
 import { getStripe, getStripeWebhookSecret } from "@/lib/stripe/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { mapSubscriptionStatus } from "@/services/billing/subscription-status";
 
 import { requireSuperAdmin } from "./administration-service";
 
@@ -70,14 +71,6 @@ export async function createBillingPortal(organizationId: string, origin: string
     customer: data.stripe_customer_id,
     return_url: `${origin}/dashboard/abonnement`,
   });
-}
-
-function mapSubscriptionStatus(status: Stripe.Subscription.Status) {
-  if (status === "trialing") return "trial";
-  if (status === "active") return "active";
-  if (status === "canceled") return "cancelled";
-  if (status === "paused" || status === "past_due" || status === "unpaid") return "suspended";
-  return "expired";
 }
 
 /**
