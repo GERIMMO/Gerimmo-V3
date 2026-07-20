@@ -149,6 +149,109 @@ async function ensureAnnualSubscription(
   );
 }
 
+/** Un tarif enregistré existe-t-il réellement dans le mode Stripe courant (test ou live) ? */
+async function priceExists(stripe: ReturnType<typeof getStripe>, priceId: string | null): Promise<boolean> {
+  if (!priceId) return false;
+  try {
+    await stripe.prices.retrieve(priceId);
+    return true;
+  } catch {
+    // Un identifiant de tarif créé en mode test est introuvable en mode live, et
+    // réciproquement : il faut alors le recréer dans le mode courant.
+    return false;
+  }
+}
+
+/**
+ * Crée dans Stripe les tarifs manquants de chaque offre, à partir des montants enregistrés
+ * en base, puis mémorise les identifiants obtenus.
+ *
+ * Chaque offre a jusqu'à trois tarifs : abonnement mensuel, frais de mise en place (une
+ * seule fois) et gestion annuelle. Les créer à la main représentait 21 saisies, avec autant
+ * d'occasions de se tromper de montant ou de coller le mauvais identifiant.
+ *
+ * Idempotent ET conscient du mode : chaque identifiant déjà enregistré est vérifié auprès de
+ * Stripe ; s'il n'existe pas dans le mode courant (cas du passage de test à live), il est
+ * recréé. Relancer l'opération après avoir basculé les clés suffit donc à préparer le live.
+ */
+export async function syncStripePrices() {
+  await requireSuperAdmin();
+  const stripe = getStripe();
+  const admin = createAdminClient();
+
+  const plans = await admin
+    .from("subscription_plans")
+    .select(
+      "id,code,name,currency,amount_cents,setup_fee_cents,annual_fee_cents,stripe_product_id,stripe_price_id,stripe_setup_price_id,stripe_annual_price_id",
+    )
+    .eq("is_purchasable", true);
+  if (plans.error) throw plans.error;
+
+  const report: Array<{ code: string; created: string[] }> = [];
+
+  for (const plan of plans.data ?? []) {
+    const created: string[] = [];
+    const patch: Record<string, string> = {};
+    const currency = (plan.currency ?? "eur").toLowerCase();
+
+    let productId = plan.stripe_product_id;
+    if (!productId || !(await priceExists(stripe, plan.stripe_price_id))) {
+      // Produit recréé en même temps que les tarifs quand on change de mode.
+      const product = await stripe.products.create({ name: `GERIMMO — ${plan.name}`, metadata: { code: plan.code } });
+      productId = product.id;
+      patch.stripe_product_id = productId;
+      created.push("produit");
+    }
+
+    if (!(await priceExists(stripe, plan.stripe_price_id))) {
+      const price = await stripe.prices.create({
+        product: productId,
+        currency,
+        unit_amount: plan.amount_cents,
+        recurring: { interval: "month" },
+        nickname: `${plan.code} — mensuel`,
+      });
+      patch.stripe_price_id = price.id;
+      created.push("mensuel");
+    }
+
+    if (plan.setup_fee_cents > 0 && !(await priceExists(stripe, plan.stripe_setup_price_id))) {
+      const price = await stripe.prices.create({
+        product: productId,
+        currency,
+        unit_amount: plan.setup_fee_cents,
+        nickname: `${plan.code} — mise en place`,
+      });
+      patch.stripe_setup_price_id = price.id;
+      created.push("mise en place");
+    }
+
+    if (plan.annual_fee_cents > 0 && !(await priceExists(stripe, plan.stripe_annual_price_id))) {
+      const price = await stripe.prices.create({
+        product: productId,
+        currency,
+        unit_amount: plan.annual_fee_cents,
+        recurring: { interval: "year" },
+        nickname: `${plan.code} — gestion annuelle`,
+      });
+      patch.stripe_annual_price_id = price.id;
+      created.push("gestion annuelle");
+    }
+
+    if (Object.keys(patch).length > 0) {
+      const applied = await admin.from("subscription_plans").update(patch).eq("id", plan.id).select("id");
+      if (applied.error) throw applied.error;
+      if (!applied.data?.length) {
+        throw new Error(`Tarifs Stripe crees pour ${plan.code} mais non enregistres en base.`);
+      }
+    }
+
+    report.push({ code: plan.code, created });
+  }
+
+  return { plans: report, mode: process.env.STRIPE_SECRET_KEY?.startsWith("sk_live") ? "live" : "test" };
+}
+
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
   const event = stripe.webhooks.constructEvent(rawBody, signature, getStripeWebhookSecret());
