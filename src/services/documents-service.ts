@@ -16,7 +16,11 @@ import type {
   VersionDocumentInput,
 } from "@/types/documents";
 
-import { assertSupervisionOrganization, getSupervisionDataScope, recordSupervisionAction } from "./supervision-service";
+import {
+  getSupervisionDataScope,
+  narrowToSupervisionScopeOrganization,
+  recordSupervisionAction,
+} from "./supervision-service";
 
 function isDocumentInSupervision(
   document: GerimmoDocument,
@@ -46,7 +50,7 @@ function isDocumentInSupervision(
 }
 
 async function assertDocumentSupervision(document: GerimmoDocument) {
-  const supervision = await assertSupervisionOrganization(document.organization_id);
+  const supervision = await narrowToSupervisionScopeOrganization(document.organization_id);
   if (supervision && !isDocumentInSupervision(document, supervision)) {
     throw new Error("Document hors du contexte supervisé.");
   }
@@ -180,7 +184,7 @@ export async function listDocuments(): Promise<DocumentsPayload> {
 }
 
 export async function createDocument(input: CreateDocumentInput) {
-  await assertSupervisionOrganization(input.organization_id);
+  await narrowToSupervisionScopeOrganization(input.organization_id);
   const supabase = await createClient();
   if (input.visibility === "proprietaire" && !input.owner_profile_id) {
     throw new Error("Un document propriétaire doit avoir un propriétaire destinataire.");

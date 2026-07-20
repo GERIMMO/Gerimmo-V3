@@ -9,7 +9,7 @@ import type {
   UpdateIncidentInput,
 } from "@/types/incidents";
 
-import { assertSupervisionBien, getSupervisionDataScope, recordSupervisionAction } from "./supervision-service";
+import { getSupervisionDataScope, narrowToSupervisionScopeBien, recordSupervisionAction } from "./supervision-service";
 
 const futureLinks = {
   devis: [],
@@ -57,7 +57,7 @@ export async function listIncidents(): Promise<IncidentsPayload> {
 }
 
 export async function createIncident(input: CreateIncidentInput) {
-  await assertSupervisionBien(input.bien_id);
+  await narrowToSupervisionScopeBien(input.bien_id);
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("Authentification requise.");
@@ -116,7 +116,7 @@ export async function updateIncident({ id, ...input }: UpdateIncidentInput) {
     .eq("id", id)
     .maybeSingle();
   if (currentError || !current) throw currentError ?? new Error("Incident introuvable.");
-  await assertSupervisionBien(input.bien_id ?? current.bien_id);
+  await narrowToSupervisionScopeBien(input.bien_id ?? current.bien_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incidents")

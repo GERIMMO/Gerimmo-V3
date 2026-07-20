@@ -9,9 +9,9 @@ import type {
 } from "@/types/business";
 
 import {
-  assertSupervisionManager,
-  assertSupervisionOrganization,
   getSupervisionOrganizationId,
+  narrowToSupervisionScopeManager,
+  narrowToSupervisionScopeOrganization,
 } from "./supervision-service";
 
 async function currentOrganization() {
@@ -34,10 +34,10 @@ async function currentOrganization() {
 }
 
 export async function getBusinessPayload(organizationId?: string): Promise<BusinessPayload> {
-  await assertSupervisionManager();
+  await narrowToSupervisionScopeManager();
   const { supabase, organizationId: ownOrganization } = await currentOrganization();
   const target = organizationId ?? ownOrganization;
-  if (target) await assertSupervisionOrganization(target);
+  if (target) await narrowToSupervisionScopeOrganization(target);
   const [plans, subscription, organization] = await Promise.all([
     supabase
       .from("subscription_plans" as never)
@@ -99,11 +99,11 @@ export async function getBusinessPayload(organizationId?: string): Promise<Busin
 }
 
 export async function startTrial(planId: string, organizationId?: string) {
-  await assertSupervisionManager();
+  await narrowToSupervisionScopeManager();
   const { supabase, organizationId: ownOrganization } = await currentOrganization();
   const target = organizationId ?? ownOrganization;
   if (!target) throw new Error("Organisation requise.");
-  await assertSupervisionOrganization(target);
+  await narrowToSupervisionScopeOrganization(target);
   const { data, error } = await supabase.rpc(
     "start_organization_trial" as never,
     { target_organization_id: target, target_plan_id: planId } as never,
@@ -117,14 +117,14 @@ export async function administerSubscription(
   action: "extend_trial" | "offer_month" | "suspend" | "reactivate" | "cancel",
   promotionCode?: string,
 ) {
-  await assertSupervisionManager();
+  await narrowToSupervisionScopeManager();
   const subscription = await createAdminClient()
     .from("organization_subscriptions")
     .select("organization_id")
     .eq("id", subscriptionId)
     .maybeSingle();
   if (subscription.error || !subscription.data) throw new Error("Abonnement introuvable.");
-  await assertSupervisionOrganization(subscription.data.organization_id);
+  await narrowToSupervisionScopeOrganization(subscription.data.organization_id);
   const supabase = await createClient();
   if (promotionCode) {
     const { data, error } = await supabase.rpc(
@@ -171,7 +171,7 @@ export async function administerSubscription(
 }
 
 export async function getOnboarding(): Promise<OnboardingPayload> {
-  await assertSupervisionManager();
+  await narrowToSupervisionScopeManager();
   const { supabase, organizationId } = await currentOrganization();
   if (!organizationId) {
     const { data: steps, error } = await supabase
@@ -327,7 +327,7 @@ export async function createOrganization(input: {
 }
 
 export async function updateOnboardingStep(stepId: string, status: "in_progress" | "completed" | "skipped") {
-  await assertSupervisionManager();
+  await narrowToSupervisionScopeManager();
   const { supabase, user, organizationId } = await currentOrganization();
   if (!organizationId) throw new Error("Organisation requise.");
   const { data, error } = await supabase

@@ -1,3 +1,24 @@
+/**
+ * ⚠️ LIRE AVANT D'UTILISER LES FONCTIONS `narrowToSupervisionScope*`.
+ *
+ * Elles NE SONT PAS des contrôles d'autorisation. Elles restreignent uniquement le
+ * périmètre lorsqu'un super administrateur observe une organisation depuis le centre de
+ * supervision. Hors de ce mode — c'est-à-dire pour la totalité du trafic normal — elles
+ * rendent la main sans rien vérifier.
+ *
+ * La seule protection réelle est donc la RLS. Or la RLS échoue EN SILENCE : un UPDATE ou un
+ * DELETE refusé ne lève aucune erreur, il ne touche simplement aucune ligne, et un SELECT
+ * refusé renvoie zéro ligne. (Un INSERT, lui, lève bien `42501`.)
+ *
+ * Conséquence pratique, à respecter systématiquement : après toute écriture passant par la
+ * session de l'utilisateur, ajouter `.select(...)` et vérifier qu'une ligne a bien été
+ * renvoyée. Sans cela, l'application annonce un succès sans avoir rien enregistré — bug
+ * rencontré plusieurs fois dans ce dépôt (quittances jamais envoyées, modifications de
+ * profil sans effet, écritures hors périmètre acceptées).
+ *
+ * Ces fonctions s'appelaient `assertSupervision*`, ce qui les faisait lire comme des gardes
+ * de sécurité au point d'appel et a directement causé l'un de ces bugs.
+ */
 import { cookies } from "next/headers";
 
 import { canEnterPortal } from "@/lib/auth/portal-capabilities";
@@ -156,13 +177,13 @@ export async function getSupervisionDataScope(): Promise<SupervisionDataScope | 
   };
 }
 
-export async function assertSupervisionOrganization(organizationId: string) {
+export async function narrowToSupervisionScopeOrganization(organizationId: string) {
   const scope = await getSupervisionDataScope();
   if (scope && scope.organizationId !== organizationId) throw new Error("Organisation hors du périmètre supervisé.");
   return scope;
 }
 
-export async function assertSupervisionBien(bienId: string) {
+export async function narrowToSupervisionScopeBien(bienId: string) {
   const scope = await getSupervisionDataScope();
   if (!scope) return null;
   const { data, error } = await createAdminClient()
@@ -194,20 +215,20 @@ export async function getSupervisionIncidentIds(): Promise<readonly string[] | n
   return (data ?? []).map((row) => row.id);
 }
 
-export async function assertSupervisionIncident(incidentId: string) {
+export async function narrowToSupervisionScopeIncident(incidentId: string) {
   const incidentIds = await getSupervisionIncidentIds();
   if (incidentIds && !incidentIds.includes(incidentId)) throw new Error("Incident hors du contexte supervisé.");
   return incidentIds;
 }
 
-export async function assertSupervisionQuoteRequest(requestId: string) {
+export async function narrowToSupervisionScopeQuoteRequest(requestId: string) {
   const { data, error } = await createAdminClient()
     .from("incident_quote_requests")
     .select("incident_id")
     .eq("id", requestId)
     .maybeSingle();
   if (error || !data) throw error ?? new Error("Demande de devis introuvable.");
-  await assertSupervisionIncident(data.incident_id);
+  await narrowToSupervisionScopeIncident(data.incident_id);
 }
 
 export async function getSupervisionQuoteRequestIds(): Promise<readonly string[] | null> {
@@ -222,28 +243,28 @@ export async function getSupervisionQuoteRequestIds(): Promise<readonly string[]
   return (data ?? []).map((row) => row.id);
 }
 
-export async function assertSupervisionSchedule(requestId: string) {
+export async function narrowToSupervisionScopeSchedule(requestId: string) {
   const { data, error } = await createAdminClient()
     .from("incident_schedule_requests")
     .select("incident_id")
     .eq("id", requestId)
     .maybeSingle();
   if (error || !data) throw error ?? new Error("Planification introuvable.");
-  await assertSupervisionIncident(data.incident_id);
+  await narrowToSupervisionScopeIncident(data.incident_id);
 }
 
-export async function assertSupervisionIntervention(interventionId: string) {
+export async function narrowToSupervisionScopeIntervention(interventionId: string) {
   const { data, error } = await createAdminClient()
     .from("incident_interventions")
     .select("incident_id")
     .eq("id", interventionId)
     .maybeSingle();
   if (error || !data) throw error ?? new Error("Intervention introuvable.");
-  await assertSupervisionIncident(data.incident_id);
+  await narrowToSupervisionScopeIncident(data.incident_id);
 }
 
-export async function assertSupervisionProfile(profileId: string, organizationId: string) {
-  const scope = await assertSupervisionOrganization(organizationId);
+export async function narrowToSupervisionScopeProfile(profileId: string, organizationId: string) {
+  const scope = await narrowToSupervisionScopeOrganization(organizationId);
   if (!scope) return null;
   const { data, error } = await createAdminClient()
     .from("organization_members")
@@ -260,13 +281,13 @@ export async function assertSupervisionProfile(profileId: string, organizationId
   return scope;
 }
 
-export async function assertSupervisionPortal(types: readonly SupervisionTargetType[]) {
+export async function narrowToSupervisionScopePortal(types: readonly SupervisionTargetType[]) {
   const scope = await getSupervisionDataScope();
   if (scope && !types.includes(scope.type)) throw new Error("Action indisponible dans ce portail supervisé.");
   return scope;
 }
 
-export async function assertSupervisionManager() {
+export async function narrowToSupervisionScopeManager() {
   const scope = await getSupervisionDataScope();
   if (scope && scope.type !== "agency" && !(scope.type === "owner" && scope.targetId === scope.organizationId)) {
     throw new Error("Action réservée au gestionnaire du portail supervisé.");

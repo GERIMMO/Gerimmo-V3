@@ -11,7 +11,11 @@ import type {
   ScheduleDecisionInput,
 } from "@/types/incident-scheduling";
 
-import { assertSupervisionIncident, assertSupervisionSchedule, getSupervisionIncidentIds } from "./supervision-service";
+import {
+  getSupervisionIncidentIds,
+  narrowToSupervisionScopeIncident,
+  narrowToSupervisionScopeSchedule,
+} from "./supervision-service";
 
 const futureLinks = {
   intervention: null,
@@ -59,7 +63,7 @@ export async function listIncidentScheduling(): Promise<IncidentSchedulingPayloa
 }
 
 export async function createScheduleRequest(input: CreateScheduleRequestInput) {
-  await assertSupervisionIncident(input.incident_id);
+  await narrowToSupervisionScopeIncident(input.incident_id);
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("incident_schedule_requests")
@@ -83,7 +87,7 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
   if (input.slots.length < 3) {
     throw new Error("L artisan doit proposer au moins 3 creneaux.");
   }
-  await assertSupervisionSchedule(input.schedule_request_id);
+  await narrowToSupervisionScopeSchedule(input.schedule_request_id);
 
   const supabase = await createClient();
   const schedule = await supabase
@@ -138,10 +142,14 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
       .eq("id", batch.id)
       .select("*")
       .single(),
+    // Sans .select(), un refus RLS ne lève rien : les créneaux seraient insérés mais la
+    // demande resterait à son statut précédent, donc les disponibilités n'apparaîtraient
+    // nulle part alors que l'artisan les a bien saisies.
     supabase
       .from("incident_schedule_requests")
       .update({ status: "creneaux_proposes" } as never)
-      .eq("id", scheduleRequest.id),
+      .eq("id", scheduleRequest.id)
+      .select("id"),
   ]);
 
   if (batchUpdate.error) {
@@ -151,12 +159,15 @@ export async function proposeScheduleSlots(input: ProposeScheduleSlotsInput) {
   if (requestUpdate.error) {
     throw requestUpdate.error;
   }
+  if (!requestUpdate.data?.length) {
+    throw new Error("Creneaux enregistres mais demande de planification non mise a jour.");
+  }
 
   return batchUpdate.data as IncidentScheduleSlotBatch;
 }
 
 export async function decideSchedule(input: ScheduleDecisionInput) {
-  await assertSupervisionSchedule(input.schedule_request_id);
+  await narrowToSupervisionScopeSchedule(input.schedule_request_id);
   const supabase = await createClient();
   const scheduleResult = await supabase
     .from("incident_schedule_requests")
@@ -216,11 +227,17 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
             .from("incident_schedule_slot_batches")
             .update({ status: "transmise" } as never)
             .eq("id", latestBatch.id)
-        : Promise.resolve({ error: null }),
+            .select("id")
+        : Promise.resolve({ error: null, data: null }),
     ]);
 
     if (batchUpdate.error) {
       throw batchUpdate.error;
+    }
+    // Le gestionnaire voyait « transmis au locataire » alors que le lot de créneaux n'avait
+    // pas changé d'état : les disponibilités n'étaient jamais présentées au locataire.
+    if (latestBatch && !batchUpdate.data?.length) {
+      throw new Error("Creneaux non transmis au locataire.");
     }
 
     if (requestUpdate.error) {
@@ -248,18 +265,25 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
             .from("incident_schedule_slot_batches")
             .update({ status: "refusee" } as never)
             .eq("id", latestBatch.id)
-        : Promise.resolve({ error: null }),
+            .select("id")
+        : Promise.resolve({ error: null, data: null }),
       latestBatch
         ? supabase
             .from("incident_schedule_slots")
             .update({ status: "refuse" } as never)
             .eq("batch_id", latestBatch.id)
-        : Promise.resolve({ error: null }),
+            .select("id")
+        : Promise.resolve({ error: null, data: null }),
     ]);
 
     for (const result of [batchUpdate, slotsUpdate]) {
       if (result.error) {
         throw result.error;
+      }
+      // Des créneaux refusés qui restent marqués « proposés » réapparaissent au tour suivant
+      // comme s'ils étaient toujours d'actualité.
+      if (latestBatch && !result.data?.length) {
+        throw new Error("Refus des creneaux non enregistre.");
       }
     }
 
@@ -298,10 +322,17 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
       .eq("id", schedule.id)
       .select("*")
       .single(),
+    // Le créneau retenu DOIT passer à 'selectionne' : l'écran du locataire liste les
+    // rendez-vous par statut. Sans cela, la demande passait bien à 'valide' côté
+    // gestionnaire mais AUCUN rendez-vous confirmé n'apparaissait au locataire —
+    // l'artisan se déplaçait et le locataire n'était pas là.
     supabase
       .from("incident_schedule_slots")
       .update({ status: "selectionne" } as never)
-      .eq("id", selectedSlotId),
+      .eq("id", selectedSlotId)
+      .select("id"),
+    // Zéro ligne est ici légitime (il peut n'y avoir qu'un seul créneau) : on ne contrôle
+    // que l'absence d'erreur.
     supabase
       .from("incident_schedule_slots")
       .update({ status: "refuse" } as never)
@@ -312,13 +343,20 @@ export async function decideSchedule(input: ScheduleDecisionInput) {
           .from("incident_schedule_slot_batches")
           .update({ status: "acceptee" } as never)
           .eq("id", latestBatch.id)
-      : Promise.resolve({ error: null }),
+          .select("id")
+      : Promise.resolve({ error: null, data: null }),
   ]);
 
   for (const result of [selectedSlotUpdate, otherSlotsUpdate, batchUpdate]) {
     if (result.error) {
       throw result.error;
     }
+  }
+  if (!selectedSlotUpdate.data?.length) {
+    throw new Error("Rendez-vous valide mais creneau non marque comme retenu.");
+  }
+  if (latestBatch && !batchUpdate.data?.length) {
+    throw new Error("Rendez-vous valide mais lot de creneaux non cloture.");
   }
 
   if (requestUpdate.error) {
