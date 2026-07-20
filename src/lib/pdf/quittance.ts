@@ -122,24 +122,25 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   // C'est le logement qui identifie la quittance au premier coup d'œil, pas le bailleur.
   // Celui-ci reste identifié par la formule « Je soussigné… » et par le pied de page, ce qui
   // satisfait l'obligation de désigner l'auteur du document.
-  page.drawRectangle({ x: 0, y: HAUTEUR - 96, width: LARGEUR, height: 96, color: BLEU });
-  texte("LOGEMENT LOUÉ", MARGE, HAUTEUR - 34, { taille: 7.5, gras: true, couleur: BLEU_PALE });
-  let ligneEnTete = HAUTEUR - 54;
+  const hauteurBandeau = 74;
+  page.drawRectangle({ x: 0, y: HAUTEUR - hauteurBandeau, width: LARGEUR, height: hauteurBandeau, color: BLEU });
+  texte("LOGEMENT LOUÉ", MARGE, HAUTEUR - 27, { taille: 7, gras: true, couleur: BLEU_PALE });
+  let ligneEnTete = HAUTEUR - 44;
   for (const ligne of data.logement.slice(0, 2)) {
-    texte(ligne, MARGE, ligneEnTete, { taille: 14, gras: true, couleur: BLANC });
-    ligneEnTete -= 18;
+    texte(ligne, MARGE, ligneEnTete, { taille: 12.5, gras: true, couleur: BLANC });
+    ligneEnTete -= 16;
   }
 
   const titre = "QUITTANCE DE LOYER";
-  texte(titre, LARGEUR - MARGE - largeurTexte(titre, 13, true), HAUTEUR - 44, {
-    taille: 13,
+  texte(titre, LARGEUR - MARGE - largeurTexte(titre, 12.5, true), HAUTEUR - 34, {
+    taille: 12.5,
     gras: true,
     couleur: BLANC,
   });
   const ref = `Réf. ${data.reference}`;
-  texte(ref, LARGEUR - MARGE - largeurTexte(ref, 8.5), HAUTEUR - 62, { taille: 8.5, couleur: BLEU_PALE });
+  texte(ref, LARGEUR - MARGE - largeurTexte(ref, 8), HAUTEUR - 50, { taille: 8, couleur: BLEU_PALE });
 
-  let y = HAUTEUR - 140;
+  let y = HAUTEUR - hauteurBandeau - 34;
 
   // ── Les deux parties, côte à côte ─────────────────────────────────────────────────
   // Le bailleur peut figurer ici sans faire doublon : le bandeau porte désormais le
@@ -257,9 +258,11 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   ligneMontant("Loyer hors charges", data.loyerCents);
   ligneMontant("Provision pour charges", data.chargesCents);
   ligneMontant("Total réglé", total, { fond: true, gras: true });
-  y -= 10;
+  y -= 12;
   texte(`Règlement reçu le ${data.dateReglement}.`, MARGE, y, { taille: 9.5, couleur: GRIS });
-  y -= 26;
+  // Les mentions légales sont un propos distinct : elles ont besoin de respirer, sinon
+  // elles se lisent comme la suite de la ligne de règlement.
+  y -= 42;
 
   // Mentions légales, dans un encadré discret.
   const hauteurMentions = 56;
