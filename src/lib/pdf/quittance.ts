@@ -281,18 +281,38 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   y = yMentions - hauteurMentions - 30;
 
   // ── Signature ─────────────────────────────────────────────────────────────────────
-  texte(data.lieuEtDate, LARGEUR - MARGE - 200, y, { taille: 10 });
-  y -= 16;
-  texte("Le bailleur ou son mandataire", LARGEUR - MARGE - 200, y, { taille: 8.5, couleur: GRIS });
+  // Un cadre explicite plutôt qu'un grand vide : le document est souvent imprimé, signé à la
+  // main puis scanné. L'emplacement doit se voir.
+  const largeurSignature = 240;
+  const hauteurSignature = 86;
+  const xSignature = LARGEUR - MARGE - largeurSignature;
+  texte(data.lieuEtDate, xSignature, y, { taille: 10 });
+  y -= 12;
+  page.drawRectangle({
+    x: xSignature,
+    y: y - hauteurSignature,
+    width: largeurSignature,
+    height: hauteurSignature,
+    borderColor: LIGNE,
+    borderWidth: 0.5,
+  });
+  texte("Signature du bailleur ou de son mandataire", xSignature + 10, y - 16, { taille: 8, couleur: GRIS });
 
   // ── Pied de page ──────────────────────────────────────────────────────────────────
+  // Aucune mention de GERIMMO : l'agence présente ce document comme le sien. Seule son
+  // identité et la référence de la quittance y figurent.
   page.drawLine({
     start: { x: MARGE, y: 58 },
     end: { x: LARGEUR - MARGE, y: 58 },
     thickness: 0.5,
     color: LIGNE,
   });
-  texte(`Quittance ${data.reference} — document généré par GERIMMO`, MARGE, 44, { taille: 7.5, couleur: GRIS });
+  const piedGauche = [data.bailleur.nom, data.bailleur.siren ? `SIREN ${data.bailleur.siren}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  texte(piedGauche, MARGE, 44, { taille: 7.5, couleur: GRIS });
+  const piedDroite = `Quittance ${data.reference}`;
+  texte(piedDroite, LARGEUR - MARGE - largeurTexte(piedDroite, 7.5), 44, { taille: 7.5, couleur: GRIS });
 
   return pdf.save();
 }
