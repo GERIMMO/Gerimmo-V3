@@ -129,9 +129,17 @@ test("parcours loyers : quittance validée d'un côté, mise en demeure de l'aut
   );
   expect(quittance?.status, "La quittance validée doit être active.").toBe("actif");
 
+  // L'adresse attendue est lue sur la fixture plutôt que codée en dur : ce qui compte est
+  // que l'e-mail parte vers LE LOCATAIRE du bien, quelle que soit son adresse.
+  const utilisateurs = await page.request.get("/api/utilisateurs");
+  expect(utilisateurs.ok(), `GET /api/utilisateurs: ${await utilisateurs.text()}`).toBeTruthy();
+  const { users } = (await utilisateurs.json()) as { users: Array<{ full_name: string; email: string }> };
+  const adresseLocataire = users.find((item) => item.full_name === "Locataire E2E")?.email;
+  expect(adresseLocataire, "La fixture 'Locataire E2E' doit avoir une adresse e-mail.").toBeTruthy();
+
   const envoi = documentsApresValidation.emails.find((item) => item.document_id === quittance!.id);
   expect(envoi, "La quittance validée doit être mise en file d'envoi vers le locataire.").toBeTruthy();
-  expect(envoi?.recipient_email, "L'e-mail doit partir vers le locataire du bien.").toBe("locataire.e2e@gerimmo.test");
+  expect(envoi?.recipient_email, "L'e-mail doit partir vers le locataire du bien.").toBe(adresseLocataire);
 
   // ── Branche B : le loyer est impayé ──────────────────────────────────────────────────
   // 6. Confirmer le non-paiement
