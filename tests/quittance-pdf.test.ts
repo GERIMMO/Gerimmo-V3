@@ -19,9 +19,9 @@ const donnees = {
 };
 
 test("les montants sont formates en euros a la francaise", () => {
-  assert.equal(formaterEuros(60000), "600,00 EUR");
-  assert.equal(formaterEuros(0), "0,00 EUR");
-  assert.equal(formaterEuros(1234), "12,34 EUR");
+  assert.equal(formaterEuros(60000), "600,00 €");
+  assert.equal(formaterEuros(0), "0,00 €");
+  assert.equal(formaterEuros(1234), "12,34 €");
 });
 
 test("la quittance produit un vrai fichier PDF", async () => {
@@ -51,12 +51,23 @@ test("un loyer sans charges reste valide et affiche zero", async () => {
 });
 
 test("les caracteres typographiques ne font pas echouer la generation", async () => {
-  // Les polices standard PDF n'acceptent pas les apostrophes courbes : elles sont
-  // remplacees en amont. Sans cela, la generation leve une erreur d'encodage.
+  // Les polices standard PDF n'acceptent pas les apostrophes courbes ni les tirets longs :
+  // ils sont remplaces en amont. Sans cela, la generation leve une erreur d'encodage.
   const octets = await buildQuittancePdf({
     ...donnees,
     bailleur: { ...donnees.bailleur, nom: "Agence l’Horizon — Gestion" },
     locataire: { nom: "Marie D’Alençon", adresse: ["8 avenue du Parc", "69006 Lyon"] },
   });
   assert.ok(octets.byteLength > 1000);
+});
+
+test("les accents francais sont conserves, pas transformes en texte sans accent", async () => {
+  // Un document officiel francais ecrit « Periode » et « regle » fait neglige. L'encodage
+  // WinAnsi des polices standard couvre les accents : il n'y a aucune raison de les retirer.
+  // Ce test echouerait si quelqu'un « nettoyait » les accents pour eviter un plantage.
+  const octets = await buildQuittancePdf({
+    ...donnees,
+    locataire: { nom: "Éléonore Çavaçà Ùmlaut", adresse: ["1 rue de l'Été", "75001 Paris"] },
+  });
+  assert.ok(octets.byteLength > 1000, "les accents ne doivent pas faire echouer la generation");
 });
