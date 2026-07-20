@@ -5,7 +5,12 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
 
 /**
  * Parcours métier réel (mutations) : connexion → création d'un incident sur un bien du
- * périmètre → ouverture d'une demande de devis → vérifications → archivage (auto-nettoyage).
+ * périmètre → demande de devis à 2 artisans → envoi → réception d'une offre → sélection
+ * de l'offre → vérifications → archivage (auto-nettoyage).
+ *
+ * Règle métier couverte : GERIMMO exige au moins 2 devis pour envoyer une demande, sauf
+ * choix explicite d'un artisan privé unique (`allow_single_private_artisan`). Le trigger
+ * validate_incident_quote_request_send() l'impose côté base.
  * Nécessite E2E_USER_EMAIL / E2E_USER_PASSWORD (compte gestionnaire avec au moins un bien).
  * Fixture attendu : un bien de référence "E2E-BIEN-01" dans l'org du compte E2E.
  *
@@ -19,7 +24,7 @@ const E2E_PASSWORD = process.env.E2E_USER_PASSWORD;
  * à cause de la limitation de débit d'authentification Supabase — ce n'est pas une
  * régression. Laisser ~1 min entre deux exécutions rapprochées.
  */
-test("parcours métier : incident + demande de devis, de la création à l'archivage", async ({ page }) => {
+test("parcours métier : incident → devis envoyé, reçu et retenu, puis archivage", async ({ page }) => {
   test.skip(!E2E_EMAIL || !E2E_PASSWORD, "Identifiants E2E requis (E2E_USER_EMAIL / E2E_USER_PASSWORD).");
 
   // 1. Connexion
@@ -70,7 +75,13 @@ test("parcours métier : incident + demande de devis, de la création à l'archi
       organization_id: bien!.organization_id,
       incident_id: created.id,
       title: quoteTitle,
-      recipients: [{ artisan_name: "Artisan E2E", artisan_scope: "prive" }],
+      // Règle métier GERIMMO : au moins 2 devis pour pouvoir envoyer la demande
+      // (sauf `allow_single_private_artisan` avec un unique artisan privé).
+      // Voir le trigger validate_incident_quote_request_send().
+      recipients: [
+        { artisan_name: "Artisan E2E 1", artisan_scope: "prive" },
+        { artisan_name: "Artisan E2E 2", artisan_scope: "prive" },
+      ],
     },
   });
   expect(createQuote.status(), `POST /api/incidents/devis: ${await createQuote.text()}`).toBe(201);
@@ -86,7 +97,55 @@ test("parcours métier : incident + demande de devis, de la création à l'archi
     "La demande de devis créée doit apparaître dans la liste.",
   ).toBeTruthy();
 
-  // 7. Nettoyage : archiver la demande de devis puis l'incident
+  // 7. Envoyer la demande à l'artisan
+  const send = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, { data: { action: "send" } });
+  expect(send.ok(), `PATCH send devis: ${await send.text()}`).toBeTruthy();
+
+  // 8. Retrouver le destinataire créé avec la demande
+  const withRecipients = await page.request.get("/api/incidents/devis");
+  const { recipients } = (await withRecipients.json()) as {
+    recipients: Array<{ id: string; quote_request_id: string }>;
+  };
+  const recipient = recipients.find((item) => item.quote_request_id === quoteRequest.id);
+  expect(recipient, "Le destinataire de la demande de devis doit exister.").toBeTruthy();
+
+  // 9. L'artisan renvoie une offre chiffrée
+  const receive = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
+    data: {
+      action: "receive",
+      quote: {
+        organization_id: bien!.organization_id,
+        recipient_id: recipient!.id,
+        amount_cents: 45000,
+      },
+    },
+  });
+  expect(receive.ok(), `PATCH receive devis: ${await receive.text()}`).toBeTruthy();
+  const quote = (await receive.json()) as { id: string };
+  expect(quote.id, "L'offre reçue doit avoir un identifiant.").toBeTruthy();
+
+  // 10. Retenir cette offre
+  const select = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
+    data: { action: "select", quote_id: quote.id },
+  });
+  expect(select.ok(), `PATCH select devis: ${await select.text()}`).toBeTruthy();
+
+  // 11. Vérifier que la demande et l'offre sont bien passées en "retenu"
+  const afterSelect = await page.request.get("/api/incidents/devis");
+  const { requests: finalRequests, quotes } = (await afterSelect.json()) as {
+    requests: Array<{ id: string; status: string }>;
+    quotes: Array<{ id: string; status: string }>;
+  };
+  expect(
+    finalRequests.find((item) => item.id === quoteRequest.id)?.status,
+    "La demande de devis doit passer au statut 'retenu'.",
+  ).toBe("retenu");
+  expect(
+    quotes.find((item) => item.id === quote.id)?.status,
+    "L'offre sélectionnée doit passer au statut 'retenu'.",
+  ).toBe("retenu");
+
+  // 12. Nettoyage : archiver la demande de devis puis l'incident
   const archiveQuote = await page.request.patch(`/api/incidents/devis/${quoteRequest.id}`, {
     data: { action: "archive" },
   });
