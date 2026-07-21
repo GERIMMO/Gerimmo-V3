@@ -32,7 +32,9 @@ export function AgencyBrandingSettings({
   const [legal, setLegal] = useState(initialBranding.legal);
   const [saving, setSaving] = useState(false);
   const [logoEnCours, setLogoEnCours] = useState(false);
+  const [signatureEnCours, setSignatureEnCours] = useState(false);
   const fichierLogo = useRef<HTMLInputElement>(null);
+  const fichierSignature = useRef<HTMLInputElement>(null);
 
   async function deposerLogo(fichier: File) {
     setLogoEnCours(true);
@@ -48,6 +50,36 @@ export function AgencyBrandingSettings({
     }
     setForm((current) => ({ ...current, logo_url: payload.logo_url ?? null }));
     toast.success("Logo déposé.");
+  }
+
+  async function deposerSignature(fichier: File) {
+    setSignatureEnCours(true);
+    const corps = new FormData();
+    corps.append("organizationId", form.organization_id);
+    corps.append("file", fichier);
+    const response = await fetch("/api/organization/signature", { method: "POST", body: corps });
+    const payload = (await response.json()) as { signature_url?: string; message?: string };
+    setSignatureEnCours(false);
+    if (!response.ok) {
+      toast.error(payload.message ?? "Dépôt impossible.");
+      return;
+    }
+    setForm((current) => ({ ...current, has_signature: true, signature_url: payload.signature_url ?? null }));
+    toast.success("Signature déposée.");
+  }
+
+  async function retirerSignature() {
+    setSignatureEnCours(true);
+    const response = await fetch(`/api/organization/signature?organizationId=${form.organization_id}`, {
+      method: "DELETE",
+    });
+    setSignatureEnCours(false);
+    if (!response.ok) {
+      toast.error("Suppression impossible.");
+      return;
+    }
+    setForm((current) => ({ ...current, has_signature: false, signature_url: null }));
+    toast.success("Signature retirée.");
   }
 
   const displayedName = form.branding_enabled && form.display_name?.trim() ? form.display_name : "GERIMMO";
@@ -176,6 +208,64 @@ export function AgencyBrandingSettings({
             <Save data-icon="inline-start" />
             Enregistrer l identité
           </Button>
+        </div>
+
+        <Separator />
+
+        {/* Signature manuscrite : stockée dans un espace privé. Elle n'est apposée sur un
+            document que si vous le choisissez, document par document. */}
+        <div className="space-y-3">
+          <div>
+            <div className="font-medium text-sm">Signature manuscrite</div>
+            <div className="text-muted-foreground text-xs">
+              Déposée en privé. Vous choisissez de l apposer ou non sur chaque document ; sinon le cadre reste vide, à
+              signer à la main.
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-40 items-center justify-center rounded-md border bg-muted/20">
+              {form.signature_url ? (
+                // biome-ignore lint/performance/noImgElement: aperçu ponctuel via URL signée courte
+                <img src={form.signature_url} alt="Signature" className="max-h-14 max-w-36 object-contain" />
+              ) : (
+                <span className="text-muted-foreground text-xs">Aucune signature</span>
+              )}
+            </div>
+            <input
+              ref={fichierSignature}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(event) => {
+                const fichier = event.target.files?.[0];
+                if (fichier) void deposerSignature(fichier);
+                event.target.value = "";
+              }}
+            />
+            <div className="flex flex-col gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={signatureEnCours}
+                onClick={() => fichierSignature.current?.click()}
+              >
+                <Upload data-icon="inline-start" />
+                {signatureEnCours ? "Dépôt…" : form.has_signature ? "Remplacer" : "Déposer une signature"}
+              </Button>
+              {form.has_signature ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={signatureEnCours}
+                  onClick={() => retirerSignature()}
+                >
+                  Retirer
+                </Button>
+              ) : null}
+            </div>
+          </div>
         </div>
       </section>
 

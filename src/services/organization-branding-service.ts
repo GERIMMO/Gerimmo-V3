@@ -112,6 +112,14 @@ export async function getOrganizationBranding(organizationId?: string): Promise<
   if (result.error) throw result.error;
   const branding = (result.data ?? {}) as Record<string, unknown>;
 
+  // Aperçu de la signature : URL signée courte, jamais publique (bucket privé).
+  const signaturePath = stringOrNull(branding.signature_path);
+  let signatureUrl: string | null = null;
+  if (signaturePath) {
+    const signee = await supabase.storage.from("organization-signatures").createSignedUrl(signaturePath, 600);
+    signatureUrl = signee.data?.signedUrl ?? null;
+  }
+
   return {
     id: stringOrNull(branding.id),
     organization_id: organization.id,
@@ -129,6 +137,8 @@ export async function getOrganizationBranding(organizationId?: string): Promise<
     official_signature: stringOrNull(branding.official_signature),
     updated_at: stringOrNull(branding.updated_at),
     legal: identiteDepuis(organization),
+    has_signature: Boolean(signaturePath),
+    signature_url: signatureUrl,
   };
 }
 

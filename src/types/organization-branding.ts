@@ -16,6 +16,10 @@ export type OrganizationBranding = {
   updated_at: string | null;
   /** Identité légale — lue depuis `organizations`, reprise sur les documents officiels. */
   legal: OrganizationLegalIdentity;
+  /** Une signature manuscrite est-elle déposée (bucket privé) ? */
+  has_signature: boolean;
+  /** URL signée courte pour l'aperçu de la signature. Jamais publique. */
+  signature_url: string | null;
 };
 
 /**
