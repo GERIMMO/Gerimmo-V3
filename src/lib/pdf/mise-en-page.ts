@@ -154,3 +154,48 @@ export async function dessinerEntete(
 
   return { y: HAUTEUR - hauteurBandeau };
 }
+
+/**
+ * Dessine le cadre de signature, en bas à droite du courrier.
+ *
+ * Si une signature manuscrite est fournie, elle est incrustée dans le cadre. Sinon le cadre
+ * reste vide pour une signature à la main après impression. Le choix d'apposer ou non la
+ * signature se fait en amont, document par document.
+ */
+export async function dessinerCadreSignature(
+  pdf: PDFDocument,
+  page: PDFPage,
+  outils: ReturnType<typeof outilsDePage>,
+  options: { y: number; hauteur?: number; signature?: Uint8Array | null },
+) {
+  const largeur = 240;
+  const hauteur = options.hauteur ?? 80;
+  const x = LARGEUR - MARGE - largeur;
+  page.drawRectangle({
+    x,
+    y: options.y - hauteur,
+    width: largeur,
+    height: hauteur,
+    borderColor: LIGNE,
+    borderWidth: 0.5,
+  });
+  outils.texte("Le bailleur ou son mandataire", x + 10, options.y - 15, { taille: 8, couleur: GRIS });
+
+  if (options.signature && options.signature.byteLength > 0) {
+    try {
+      const estPng = options.signature[0] === 0x89 && options.signature[1] === 0x50;
+      const image = estPng ? await pdf.embedPng(options.signature) : await pdf.embedJpg(options.signature);
+      const zoneH = hauteur - 26;
+      const zoneL = largeur - 24;
+      const echelle = image.scale(Math.min(zoneL / image.width, zoneH / image.height, 1));
+      page.drawImage(image, {
+        x: x + (largeur - echelle.width) / 2,
+        y: options.y - hauteur + 8,
+        width: echelle.width,
+        height: echelle.height,
+      });
+    } catch {
+      // Signature illisible : le cadre reste vide, à signer à la main.
+    }
+  }
+}

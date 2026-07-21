@@ -6,6 +6,7 @@ import {
   BLEU,
   BLEU_PALE,
   CONTENU,
+  dessinerCadreSignature,
   dessinerEntete,
   ENCRE,
   formaterEuros,
@@ -55,6 +56,8 @@ export type QuittanceData = {
   lieuEtDate: string;
   /** Logo de l'organisation (PNG/JPEG), affiché dans le bandeau. */
   logo?: Uint8Array | null;
+  /** Signature manuscrite à incruster dans le cadre. Absente = cadre vide. */
+  signature?: Uint8Array | null;
 };
 
 export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array> {
@@ -231,22 +234,11 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   y = yMentions - hauteurMentions - 30;
 
   // ── Signature ─────────────────────────────────────────────────────────────────────
-  // Un cadre explicite plutôt qu'un grand vide : le document est souvent imprimé, signé à la
-  // main puis scanné. L'emplacement doit se voir.
-  const largeurSignature = 240;
-  const hauteurSignature = 86;
-  const xSignature = LARGEUR - MARGE - largeurSignature;
-  texte(data.lieuEtDate, xSignature, y, { taille: 10 });
+  // Cadre explicite : la signature déposée s'y incruste, sinon il reste vide pour une
+  // signature à la main après impression.
+  texte(data.lieuEtDate, LARGEUR - MARGE - 240, y, { taille: 10 });
   y -= 12;
-  page.drawRectangle({
-    x: xSignature,
-    y: y - hauteurSignature,
-    width: largeurSignature,
-    height: hauteurSignature,
-    borderColor: LIGNE,
-    borderWidth: 0.5,
-  });
-  texte("Signature du bailleur ou de son mandataire", xSignature + 10, y - 16, { taille: 8, couleur: GRIS });
+  await dessinerCadreSignature(pdf, page, outils, { y, hauteur: 86, signature: data.signature });
 
   // ── Pied de page ──────────────────────────────────────────────────────────────────
   // Aucune mention de GERIMMO : l'agence présente ce document comme le sien. Seule son

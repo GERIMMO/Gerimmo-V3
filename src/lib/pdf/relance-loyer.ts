@@ -6,6 +6,7 @@ import {
   BLEU,
   BLEU_PALE,
   CONTENU,
+  dessinerCadreSignature,
   dessinerEntete,
   ENCRE,
   formaterEuros,
@@ -59,6 +60,7 @@ export type RelanceData = {
   delaiJours: number;
   lieuEtDate: string;
   logo?: Uint8Array | null;
+  signature?: Uint8Array | null;
 };
 
 /**
@@ -239,18 +241,8 @@ export async function buildRelancePdf(data: RelanceData): Promise<Uint8Array> {
   y -= 20;
 
   // ── Signature ─────────────────────────────────────────────────────────────────────
-  const largeurSignature = 240;
-  const hauteurSignature = 80;
-  const xSignature = LARGEUR - MARGE - largeurSignature;
-  page.drawRectangle({
-    x: xSignature,
-    y: y - hauteurSignature,
-    width: largeurSignature,
-    height: hauteurSignature,
-    borderColor: LIGNE,
-    borderWidth: 0.5,
-  });
-  texte("Le bailleur ou son mandataire", xSignature + 10, y - 16, { taille: 8, couleur: GRIS });
+  await dessinerCadreSignature(pdf, page, outils, { y, hauteur: 80, signature: data.signature });
+  y -= 92;
 
   // ── Pied de page ──────────────────────────────────────────────────────────────────
   page.drawLine({ start: { x: MARGE, y: 58 }, end: { x: LARGEUR - MARGE, y: 58 }, thickness: 0.5, color: LIGNE });
