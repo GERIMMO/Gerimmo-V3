@@ -1,4 +1,4 @@
-import { type PDFFont, type PDFPage, rgb } from "pdf-lib";
+import { type PDFDocument, type PDFFont, type PDFPage, rgb } from "pdf-lib";
 
 /**
  * Fondations communes aux documents officiels (quittance, relances, mise en demeure).
@@ -75,4 +75,82 @@ export function outilsDePage(page: PDFPage, normale: PDFFont, grasse: PDFFont) {
     (gras ? grasse : normale).widthOfTextAtSize(assainir(contenu), taille);
 
   return { texte, largeurTexte };
+}
+
+export type EnteteOptions = {
+  /** Couleur du bandeau : bleu pour quittance/relances, rouge pour la mise en demeure. */
+  couleur: ReturnType<typeof rgb>;
+  couleurPale: ReturnType<typeof rgb>;
+  /** Petit intitulé au-dessus des lignes de gauche, ex. « LOGEMENT LOUÉ ». */
+  intitule: string;
+  /** Jusqu'à 2 lignes à gauche (typiquement l'adresse du logement). */
+  lignes: string[];
+  titre: string;
+  reference: string;
+  tailleTitre?: number;
+  /** Logo de l'organisation (PNG ou JPEG). Placé sur une pastille blanche, à gauche. */
+  logo?: Uint8Array | null;
+};
+
+/**
+ * Dessine le bandeau d'en-tête commun aux documents.
+ *
+ * Le logo, quand il existe, est posé sur une pastille blanche — un logo peut être sombre et
+ * deviendrait illisible directement sur le bandeau coloré. Le reste du contenu se décale à sa
+ * droite. Sans logo, la mise en page est identique à avant.
+ */
+export async function dessinerEntete(
+  pdf: PDFDocument,
+  page: PDFPage,
+  outils: ReturnType<typeof outilsDePage>,
+  options: EnteteOptions,
+) {
+  const { texte, largeurTexte } = outils;
+  const hauteurBandeau = 74;
+  page.drawRectangle({
+    x: 0,
+    y: HAUTEUR - hauteurBandeau,
+    width: LARGEUR,
+    height: hauteurBandeau,
+    color: options.couleur,
+  });
+
+  let xGauche = MARGE;
+  if (options.logo && options.logo.byteLength > 0) {
+    try {
+      const estPng = options.logo[0] === 0x89 && options.logo[1] === 0x50;
+      const image = estPng ? await pdf.embedPng(options.logo) : await pdf.embedJpg(options.logo);
+      const cote = 46;
+      const echelle = image.scale(Math.min(cote / image.width, cote / image.height));
+      const chipY = HAUTEUR - hauteurBandeau + (hauteurBandeau - cote) / 2;
+      page.drawRectangle({ x: MARGE, y: chipY, width: cote, height: cote, color: BLANC });
+      page.drawImage(image, {
+        x: MARGE + (cote - echelle.width) / 2,
+        y: chipY + (cote - echelle.height) / 2,
+        width: echelle.width,
+        height: echelle.height,
+      });
+      xGauche = MARGE + cote + 14;
+    } catch {
+      // Logo illisible (format inattendu) : on ignore et on garde l'en-tête texte.
+    }
+  }
+
+  texte(options.intitule, xGauche, HAUTEUR - 27, { taille: 7, gras: true, couleur: options.couleurPale });
+  let ligneY = HAUTEUR - 44;
+  for (const ligne of options.lignes.slice(0, 2)) {
+    texte(ligne, xGauche, ligneY, { taille: 12.5, gras: true, couleur: BLANC });
+    ligneY -= 16;
+  }
+
+  const tailleTitre = options.tailleTitre ?? 12.5;
+  texte(options.titre, LARGEUR - MARGE - largeurTexte(options.titre, tailleTitre, true), HAUTEUR - 34, {
+    taille: tailleTitre,
+    gras: true,
+    couleur: BLANC,
+  });
+  const ref = `Réf. ${options.reference}`;
+  texte(ref, LARGEUR - MARGE - largeurTexte(ref, 8), HAUTEUR - 50, { taille: 8, couleur: options.couleurPale });
+
+  return { y: HAUTEUR - hauteurBandeau };
 }

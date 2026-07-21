@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { useRouter } from "next/navigation";
 
-import { Building2, RotateCcw, Save } from "lucide-react";
+import { Building2, RotateCcw, Save, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -31,6 +31,24 @@ export function AgencyBrandingSettings({
   const [form, setForm] = useState(initialBranding);
   const [legal, setLegal] = useState(initialBranding.legal);
   const [saving, setSaving] = useState(false);
+  const [logoEnCours, setLogoEnCours] = useState(false);
+  const fichierLogo = useRef<HTMLInputElement>(null);
+
+  async function deposerLogo(fichier: File) {
+    setLogoEnCours(true);
+    const corps = new FormData();
+    corps.append("organizationId", form.organization_id);
+    corps.append("file", fichier);
+    const response = await fetch("/api/organization/logo", { method: "POST", body: corps });
+    const payload = (await response.json()) as { logo_url?: string; message?: string };
+    setLogoEnCours(false);
+    if (!response.ok || !payload.logo_url) {
+      toast.error(payload.message ?? "Dépôt impossible.");
+      return;
+    }
+    setForm((current) => ({ ...current, logo_url: payload.logo_url ?? null }));
+    toast.success("Logo déposé.");
+  }
 
   const displayedName = form.branding_enabled && form.display_name?.trim() ? form.display_name : "GERIMMO";
   const welcome =
@@ -193,8 +211,36 @@ export function AgencyBrandingSettings({
                 onChange={(event) => updateBranding("display_name", event.target.value)}
               />
             </Field>
-            <Field label="Logo (URL)">
-              <Input value={form.logo_url ?? ""} onChange={(event) => updateBranding("logo_url", event.target.value)} />
+            <Field label="Logo">
+              <div className="flex items-center gap-3">
+                <Avatar size="lg">
+                  {form.logo_url ? <AvatarImage src={form.logo_url} alt="Logo" /> : null}
+                  <AvatarFallback>
+                    <Building2 className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <input
+                  ref={fichierLogo}
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(event) => {
+                    const fichier = event.target.files?.[0];
+                    if (fichier) void deposerLogo(fichier);
+                    event.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={logoEnCours || !form.is_agency}
+                  onClick={() => fichierLogo.current?.click()}
+                >
+                  <Upload data-icon="inline-start" />
+                  {logoEnCours ? "Dépôt…" : form.logo_url ? "Remplacer" : "Déposer une image"}
+                </Button>
+              </div>
             </Field>
             <Field label="E-mail d assistance">
               <Input

@@ -1,5 +1,6 @@
 import { buildQuittancePdf } from "@/lib/pdf/quittance";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { chargerLogoOrganisation } from "@/services/rent/logo-organisation";
 
 /**
  * Génère le fichier PDF d'une quittance et le dépose dans le stockage.
@@ -50,13 +51,14 @@ export function libelleMois(periodMonth: string) {
 export async function genererQuittancePdf(contexte: QuittanceContexte) {
   const admin = createAdminClient();
 
-  const [organisation, bien] = await Promise.all([
+  const [organisation, bien, logo] = await Promise.all([
     admin
       .from("organizations")
       .select("name,legal_name,siren,address_line1,address_line2,postal_code,city")
       .eq("id", contexte.organizationId)
       .maybeSingle(),
     admin.from("biens").select("address_line1,postal_code,city,name,reference").eq("id", contexte.bienId).maybeSingle(),
+    chargerLogoOrganisation(contexte.organizationId),
   ]);
   if (organisation.error) throw organisation.error;
   if (bien.error) throw bien.error;
@@ -85,6 +87,7 @@ export async function genererQuittancePdf(contexte: QuittanceContexte) {
     chargesCents: contexte.chargesCents,
     dateReglement: jourMois(contexte.dateReglement),
     lieuEtDate: `Fait le ${jourMois(new Date())}`,
+    logo,
   });
 
   const upload = await admin.storage.from(BUCKET).upload(contexte.storagePath, octets, {

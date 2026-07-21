@@ -6,6 +6,7 @@ import {
   BLEU,
   BLEU_PALE,
   CONTENU,
+  dessinerEntete,
   ENCRE,
   formaterEuros,
   formaterEurosTexte,
@@ -52,6 +53,8 @@ export type QuittanceData = {
   dateReglement: string;
   /** Ex. « Fait à Lyon, le 20/07/2026 ». */
   lieuEtDate: string;
+  /** Logo de l'organisation (PNG/JPEG), affiché dans le bandeau. */
+  logo?: Uint8Array | null;
 };
 
 export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array> {
@@ -64,31 +67,24 @@ export async function buildQuittancePdf(data: QuittanceData): Promise<Uint8Array
   const normale = await pdf.embedFont(StandardFonts.Helvetica);
   const grasse = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  const { texte, largeurTexte } = outilsDePage(page, normale, grasse);
+  const outils = outilsDePage(page, normale, grasse);
+  const { texte, largeurTexte } = outils;
 
   // ── Bandeau d'en-tête : LE LOGEMENT ───────────────────────────────────────────────
   // C'est le logement qui identifie la quittance au premier coup d'œil, pas le bailleur.
   // Celui-ci reste identifié par la formule « Je soussigné… » et par le pied de page, ce qui
   // satisfait l'obligation de désigner l'auteur du document.
-  const hauteurBandeau = 74;
-  page.drawRectangle({ x: 0, y: HAUTEUR - hauteurBandeau, width: LARGEUR, height: hauteurBandeau, color: BLEU });
-  texte("LOGEMENT LOUÉ", MARGE, HAUTEUR - 27, { taille: 7, gras: true, couleur: BLEU_PALE });
-  let ligneEnTete = HAUTEUR - 44;
-  for (const ligne of data.logement.slice(0, 2)) {
-    texte(ligne, MARGE, ligneEnTete, { taille: 12.5, gras: true, couleur: BLANC });
-    ligneEnTete -= 16;
-  }
-
-  const titre = "QUITTANCE DE LOYER";
-  texte(titre, LARGEUR - MARGE - largeurTexte(titre, 12.5, true), HAUTEUR - 34, {
-    taille: 12.5,
-    gras: true,
-    couleur: BLANC,
+  await dessinerEntete(pdf, page, outils, {
+    couleur: BLEU,
+    couleurPale: BLEU_PALE,
+    intitule: "LOGEMENT LOUÉ",
+    lignes: data.logement,
+    titre: "QUITTANCE DE LOYER",
+    reference: data.reference,
+    logo: data.logo,
   });
-  const ref = `Réf. ${data.reference}`;
-  texte(ref, LARGEUR - MARGE - largeurTexte(ref, 8), HAUTEUR - 50, { taille: 8, couleur: BLEU_PALE });
 
-  let y = HAUTEUR - hauteurBandeau - 34;
+  let y = HAUTEUR - 74 - 34;
 
   // ── Les deux parties, côte à côte ─────────────────────────────────────────────────
   // Le bailleur peut figurer ici sans faire doublon : le bandeau porte désormais le
