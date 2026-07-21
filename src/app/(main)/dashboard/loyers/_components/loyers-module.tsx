@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { AlertTriangle, Check, FileCheck2, RefreshCw, Send, X } from "lucide-react";
+import { AlertTriangle, Check, FileCheck2, PenLine, RefreshCw, Send, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -35,12 +35,19 @@ function frDate(value: string) {
   return new Date(value).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
 }
 
-export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow[] }) {
+export function LoyersModule({
+  initialPeriods,
+  signableOrganizations = [],
+}: {
+  initialPeriods: RentPeriodRow[];
+  signableOrganizations?: string[];
+}) {
   const [periods, setPeriods] = useState(initialPeriods);
   const [pending, setPending] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
   const [reminding, setReminding] = useState<string | null>(null);
+  const signable = new Set(signableOrganizations);
 
   async function refresh() {
     const response = await fetch("/api/rent");
@@ -81,12 +88,12 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
     await refresh();
   }
 
-  async function validateQuittance(periodId: string) {
+  async function validateQuittance(periodId: string, sign = false) {
     setValidating(periodId);
     const response = await fetch("/api/rent/quittance", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ periodId }),
+      body: JSON.stringify({ periodId, sign }),
     });
     setValidating(null);
     if (!response.ok) {
@@ -97,15 +104,16 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
     setPeriods((current) =>
       current.map((period) => (period.id === periodId ? { ...period, quittance_status } : period)),
     );
-    toast.success(emailed ? "Quittance validée et envoyée au locataire." : "Quittance validée et disponible.");
+    const suffix = emailed ? "et envoyée au locataire" : "et disponible";
+    toast.success(sign ? `Quittance signée, validée ${suffix}.` : `Quittance validée ${suffix}.`);
   }
 
-  async function remind(periodId: string) {
+  async function remind(periodId: string, sign = false) {
     setReminding(periodId);
     const response = await fetch("/api/rent/reminder", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ periodId }),
+      body: JSON.stringify({ periodId, sign }),
     });
     setReminding(null);
     if (!response.ok) {
@@ -113,7 +121,8 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
       return toast.error(body.message ?? "Relance impossible.");
     }
     const { miseEnDemeure } = (await response.json()) as { miseEnDemeure: boolean };
-    toast.success(miseEnDemeure ? "Mise en demeure envoyée au locataire." : "Relance envoyée au locataire.");
+    const quoi = miseEnDemeure ? "Mise en demeure" : "Relance";
+    toast.success(sign ? `${quoi} signée, envoyée au locataire.` : `${quoi} envoyée au locataire.`);
     await refresh();
   }
 
@@ -177,16 +186,29 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
                 </TableCell>
                 <TableCell>
                   {period.quittance_status === "a_valider" ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={validating === period.id}
-                      onClick={() => validateQuittance(period.id)}
-                    >
-                      <FileCheck2 data-icon="inline-start" />
-                      Valider
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {signable.has(period.organization_id) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={validating === period.id}
+                          onClick={() => validateQuittance(period.id, true)}
+                        >
+                          <PenLine data-icon="inline-start" />
+                          Signer et valider
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={validating === period.id}
+                        onClick={() => validateQuittance(period.id, false)}
+                      >
+                        <FileCheck2 data-icon="inline-start" />
+                        {signable.has(period.organization_id) ? "Valider sans signer" : "Valider"}
+                      </Button>
+                    </div>
                   ) : period.quittance_status === "validee" ? (
                     <Badge variant="secondary">Validée</Badge>
                   ) : period.quittance_status === "envoyee" ? (
@@ -220,23 +242,47 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
                       </Button>
                     </div>
                   ) : period.status === "impaye" ? (
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       {period.reminder_count > 0 ? (
                         <span className="text-muted-foreground text-xs">{period.reminder_count}/2 relance(s)</span>
+                      ) : null}
+                      {signable.has(period.organization_id) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={period.reminder_count >= 2 ? "destructive" : "default"}
+                          disabled={reminding === period.id}
+                          onClick={() => remind(period.id, true)}
+                        >
+                          {period.reminder_count >= 2 ? (
+                            <AlertTriangle data-icon="inline-start" />
+                          ) : (
+                            <PenLine data-icon="inline-start" />
+                          )}
+                          {period.reminder_count >= 2 ? "Mettre en demeure (signée)" : "Relancer (signé)"}
+                        </Button>
                       ) : null}
                       <Button
                         type="button"
                         size="sm"
-                        variant={period.reminder_count >= 2 ? "destructive" : "outline"}
+                        variant={
+                          period.reminder_count >= 2 && !signable.has(period.organization_id)
+                            ? "destructive"
+                            : "outline"
+                        }
                         disabled={reminding === period.id}
-                        onClick={() => remind(period.id)}
+                        onClick={() => remind(period.id, false)}
                       >
-                        {period.reminder_count >= 2 ? (
+                        {!signable.has(period.organization_id) && period.reminder_count >= 2 ? (
                           <AlertTriangle data-icon="inline-start" />
                         ) : (
                           <Send data-icon="inline-start" />
                         )}
-                        {period.reminder_count >= 2 ? "Mettre en demeure" : "Relancer"}
+                        {signable.has(period.organization_id)
+                          ? "Sans signer"
+                          : period.reminder_count >= 2
+                            ? "Mettre en demeure"
+                            : "Relancer"}
                       </Button>
                     </div>
                   ) : (

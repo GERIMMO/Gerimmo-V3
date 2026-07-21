@@ -18,6 +18,8 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { OrganizationBranding, OrganizationLegalIdentity } from "@/types/organization-branding";
 
+import { SignaturePad } from "./signature-pad";
+
 type OrganizationOption = { id: string; name: string };
 
 export function AgencyBrandingSettings({
@@ -218,19 +220,43 @@ export function AgencyBrandingSettings({
           <div>
             <div className="font-medium text-sm">Signature manuscrite</div>
             <div className="text-muted-foreground text-xs">
-              Déposée en privé. Vous choisissez de l apposer ou non sur chaque document ; sinon le cadre reste vide, à
-              signer à la main.
+              Signez dans le cadre ci-dessous, puis enregistrez. Elle est stockée en privé et n apparaît sur un document
+              que si vous le choisissez ; sinon le cadre reste vide, à signer à la main.
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex h-16 w-40 items-center justify-center rounded-md border bg-muted/20">
-              {form.signature_url ? (
-                // biome-ignore lint/performance/noImgElement: aperçu ponctuel via URL signée courte
-                <img src={form.signature_url} alt="Signature" className="max-h-14 max-w-36 object-contain" />
-              ) : (
-                <span className="text-muted-foreground text-xs">Aucune signature</span>
-              )}
+
+          {form.has_signature ? (
+            <div className="flex items-center gap-4">
+              <div className="flex h-16 w-40 items-center justify-center rounded-md border bg-white">
+                {form.signature_url ? (
+                  // biome-ignore lint/performance/noImgElement: aperçu ponctuel via URL signée courte
+                  <img
+                    src={form.signature_url}
+                    alt="Signature enregistrée"
+                    className="max-h-14 max-w-36 object-contain"
+                  />
+                ) : (
+                  <span className="text-muted-foreground text-xs">Signature enregistrée</span>
+                )}
+              </div>
+              <div className="text-muted-foreground text-xs">
+                Signature enregistrée. Signez à nouveau pour la remplacer.
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={signatureEnCours}
+                onClick={() => retirerSignature()}
+              >
+                Retirer
+              </Button>
             </div>
+          ) : null}
+
+          <SignaturePad onSave={deposerSignature} saving={signatureEnCours} />
+
+          <div>
             <input
               ref={fichierSignature}
               type="file"
@@ -242,29 +268,16 @@ export function AgencyBrandingSettings({
                 event.target.value = "";
               }}
             />
-            <div className="flex flex-col gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={signatureEnCours}
-                onClick={() => fichierSignature.current?.click()}
-              >
-                <Upload data-icon="inline-start" />
-                {signatureEnCours ? "Dépôt…" : form.has_signature ? "Remplacer" : "Déposer une signature"}
-              </Button>
-              {form.has_signature ? (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={signatureEnCours}
-                  onClick={() => retirerSignature()}
-                >
-                  Retirer
-                </Button>
-              ) : null}
-            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={signatureEnCours}
+              onClick={() => fichierSignature.current?.click()}
+            >
+              <Upload data-icon="inline-start" />
+              Ou déposer une image
+            </Button>
           </div>
         </div>
       </section>
