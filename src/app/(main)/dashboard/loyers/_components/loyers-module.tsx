@@ -108,12 +108,12 @@ export function LoyersModule({
     toast.success(sign ? `Quittance signée, validée ${suffix}.` : `Quittance validée ${suffix}.`);
   }
 
-  async function remind(periodId: string) {
+  async function remind(periodId: string, sign = false) {
     setReminding(periodId);
     const response = await fetch("/api/rent/reminder", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ periodId }),
+      body: JSON.stringify({ periodId, sign }),
     });
     setReminding(null);
     if (!response.ok) {
@@ -121,7 +121,8 @@ export function LoyersModule({
       return toast.error(body.message ?? "Relance impossible.");
     }
     const { miseEnDemeure } = (await response.json()) as { miseEnDemeure: boolean };
-    toast.success(miseEnDemeure ? "Mise en demeure envoyée au locataire." : "Relance envoyée au locataire.");
+    const quoi = miseEnDemeure ? "Mise en demeure" : "Relance";
+    toast.success(sign ? `${quoi} signée, envoyée au locataire.` : `${quoi} envoyée au locataire.`);
     await refresh();
   }
 
@@ -241,23 +242,47 @@ export function LoyersModule({
                       </Button>
                     </div>
                   ) : period.status === "impaye" ? (
-                    <div className="flex items-center justify-end gap-2">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       {period.reminder_count > 0 ? (
                         <span className="text-muted-foreground text-xs">{period.reminder_count}/2 relance(s)</span>
+                      ) : null}
+                      {signable.has(period.organization_id) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={period.reminder_count >= 2 ? "destructive" : "default"}
+                          disabled={reminding === period.id}
+                          onClick={() => remind(period.id, true)}
+                        >
+                          {period.reminder_count >= 2 ? (
+                            <AlertTriangle data-icon="inline-start" />
+                          ) : (
+                            <PenLine data-icon="inline-start" />
+                          )}
+                          {period.reminder_count >= 2 ? "Mettre en demeure (signée)" : "Relancer (signé)"}
+                        </Button>
                       ) : null}
                       <Button
                         type="button"
                         size="sm"
-                        variant={period.reminder_count >= 2 ? "destructive" : "outline"}
+                        variant={
+                          period.reminder_count >= 2 && !signable.has(period.organization_id)
+                            ? "destructive"
+                            : "outline"
+                        }
                         disabled={reminding === period.id}
-                        onClick={() => remind(period.id)}
+                        onClick={() => remind(period.id, false)}
                       >
-                        {period.reminder_count >= 2 ? (
+                        {!signable.has(period.organization_id) && period.reminder_count >= 2 ? (
                           <AlertTriangle data-icon="inline-start" />
                         ) : (
                           <Send data-icon="inline-start" />
                         )}
-                        {period.reminder_count >= 2 ? "Mettre en demeure" : "Relancer"}
+                        {signable.has(period.organization_id)
+                          ? "Sans signer"
+                          : period.reminder_count >= 2
+                            ? "Mettre en demeure"
+                            : "Relancer"}
                       </Button>
                     </div>
                   ) : (

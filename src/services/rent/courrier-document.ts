@@ -2,6 +2,7 @@ import { buildMiseEnDemeurePdf } from "@/lib/pdf/mise-en-demeure";
 import { buildRelancePdf } from "@/lib/pdf/relance-loyer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chargerLogoOrganisation } from "@/services/rent/logo-organisation";
+import { chargerSignatureOrganisation } from "@/services/rent/signature-organisation";
 
 /**
  * Génère et stocke le courrier PDF d'une relance ou d'une mise en demeure.
@@ -24,6 +25,8 @@ export type ContexteCourrier = {
   relancesLe: string[];
   reference: string;
   storagePath: string;
+  /** Apposer la signature manuscrite de l'organisation (choix document par document). */
+  signer?: boolean;
 };
 
 function lignesAdresse(source: {
@@ -46,7 +49,7 @@ export function libelleMois(periodMonth: string) {
 
 /** Parties et logement, tels qu'ils doivent apparaître en tête de courrier. */
 async function chargerParties(admin: ReturnType<typeof createAdminClient>, contexte: ContexteCourrier) {
-  const [organisation, bien, logo] = await Promise.all([
+  const [organisation, bien, logo, signature] = await Promise.all([
     admin
       .from("organizations")
       .select("name,legal_name,siren,address_line1,address_line2,postal_code,city")
@@ -54,6 +57,7 @@ async function chargerParties(admin: ReturnType<typeof createAdminClient>, conte
       .maybeSingle(),
     admin.from("biens").select("address_line1,postal_code,city,name,reference").eq("id", contexte.bienId).maybeSingle(),
     chargerLogoOrganisation(contexte.organizationId),
+    contexte.signer ? chargerSignatureOrganisation(contexte.organizationId) : Promise.resolve(null),
   ]);
   if (organisation.error) throw organisation.error;
   if (bien.error) throw bien.error;
@@ -73,6 +77,7 @@ async function chargerParties(admin: ReturnType<typeof createAdminClient>, conte
     locataire: { nom: contexte.tenantName ?? "Le locataire", adresse: logement },
     logement,
     logo,
+    signature,
   };
 }
 

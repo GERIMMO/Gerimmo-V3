@@ -442,7 +442,7 @@ type ImpayePeriod = {
  * Après 2 relances, la relance suivante devient une mise en demeure (statut mise_en_demeure).
  * Idempotence côté déclencheur (n8n) : n'agit que sur les périodes 'impaye'.
  */
-export async function sendRentReminder(input: { periodId: string }) {
+export async function sendRentReminder(input: { periodId: string; sign?: boolean }) {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("Authentification requise.");
@@ -458,6 +458,13 @@ export async function sendRentReminder(input: { periodId: string }) {
   const period = result.data as unknown as ImpayePeriod | null;
   if (!period || period.status !== "impaye") {
     throw new Error("Ce loyer n'est pas en impayé.");
+  }
+
+  // Signer était un choix explicite : on refuse plutôt que d'émettre un courrier vierge si
+  // aucune signature n'est déposée. Le courrier étant produit puis envoyé d'un seul tenant,
+  // ce contrôle doit précéder toute génération.
+  if (input.sign && !(await chargerSignatureOrganisation(period.organization_id))) {
+    throw new Error("Aucune signature enregistrée : déposez-la dans Paramètres › Identité avant de signer.");
   }
 
   const isMiseEnDemeure = period.reminder_count >= 2;
@@ -502,6 +509,7 @@ export async function sendRentReminder(input: { periodId: string }) {
       relancesLe: period.last_reminder_at ? [jourMois(new Date(period.last_reminder_at))] : [],
       reference,
       storagePath: `courriers/${period.organization_id}/${reference}.pdf`,
+      signer: input.sign === true,
     },
   );
 
