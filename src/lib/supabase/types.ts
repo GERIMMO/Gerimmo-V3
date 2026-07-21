@@ -24,11 +24,21 @@ type OrganizationRow = {
   name: string;
   slug: string;
   status: "active" | "suspended" | "archived";
+  organization_type: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
   archived_at: string | null;
   archived_by: string | null;
+  legal_name: string | null;
+  siren: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  postal_code: string | null;
+  city: string | null;
+  country: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
 };
 
 type OrganizationMemberRow = {

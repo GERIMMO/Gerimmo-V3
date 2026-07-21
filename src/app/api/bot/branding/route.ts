@@ -1,6 +1,10 @@
 import { getCurrentUser } from "@/lib/auth/guards";
-import { getOrganizationBranding, saveOrganizationBranding } from "@/services/organization-branding-service";
-import type { OrganizationBrandingInput } from "@/types/organization-branding";
+import {
+  getOrganizationBranding,
+  saveOrganizationBranding,
+  saveOrganizationLegalIdentity,
+} from "@/services/organization-branding-service";
+import type { OrganizationBrandingInput, OrganizationLegalIdentityInput } from "@/types/organization-branding";
 
 export async function GET(request: Request) {
   if (!(await getCurrentUser())) return Response.json({ message: "Authentification requise." }, { status: 401 });
@@ -15,7 +19,13 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   if (!(await getCurrentUser())) return Response.json({ message: "Authentification requise." }, { status: 401 });
   try {
-    return Response.json(await saveOrganizationBranding((await request.json()) as OrganizationBrandingInput));
+    // `section` aiguille : "identite" enregistre l'identité légale (organizations), sinon le
+    // branding visuel (organization_branding). Deux tables, deux droits distincts.
+    const { section, ...payload } = (await request.json()) as { section?: string } & Record<string, unknown>;
+    if (section === "identite") {
+      return Response.json(await saveOrganizationLegalIdentity(payload as unknown as OrganizationLegalIdentityInput));
+    }
+    return Response.json(await saveOrganizationBranding(payload as unknown as OrganizationBrandingInput));
   } catch (error) {
     return Response.json(
       { message: error instanceof Error ? error.message : "Modification impossible." },

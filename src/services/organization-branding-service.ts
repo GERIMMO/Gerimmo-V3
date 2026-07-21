@@ -1,5 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
-import type { OrganizationBranding, OrganizationBrandingInput } from "@/types/organization-branding";
+import type {
+  OrganizationBranding,
+  OrganizationBrandingInput,
+  OrganizationLegalIdentity,
+  OrganizationLegalIdentityInput,
+} from "@/types/organization-branding";
+
+const CHAMPS_IDENTITE = "legal_name,siren,address_line1,address_line2,postal_code,city,contact_email,contact_phone";
 
 async function resolveOrganization(organizationId?: string) {
   const supabase = await createClient();
@@ -22,9 +29,11 @@ async function resolveOrganization(organizationId?: string) {
   }
   if (!targetId) throw new Error("Aucune organisation active.");
 
+  // L'identité légale (raison sociale, SIREN, adresse) est lue en même temps : elle vit sur
+  // organizations et alimente directement les documents officiels.
   const organization = await supabase
     .from("organizations")
-    .select("id,name")
+    .select(`id,name,${CHAMPS_IDENTITE}`)
     .eq("id", targetId)
     .is("archived_at", null)
     .single();
@@ -32,6 +41,64 @@ async function resolveOrganization(organizationId?: string) {
 
   const agency = await supabase.rpc("is_agency_organization" as never, { target_organization_id: targetId } as never);
   return { supabase, organization: organization.data, isAgency: Boolean(agency.data) };
+}
+
+type OrganizationIdentiteRow = {
+  id: string;
+  name: string;
+  legal_name: string | null;
+  siren: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  postal_code: string | null;
+  city: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+};
+
+function identiteDepuis(organization: OrganizationIdentiteRow): OrganizationLegalIdentity {
+  return {
+    legal_name: stringOrNull(organization.legal_name),
+    siren: stringOrNull(organization.siren),
+    address_line1: stringOrNull(organization.address_line1),
+    address_line2: stringOrNull(organization.address_line2),
+    postal_code: stringOrNull(organization.postal_code),
+    city: stringOrNull(organization.city),
+    contact_email: stringOrNull(organization.contact_email),
+    contact_phone: stringOrNull(organization.contact_phone),
+  };
+}
+
+/**
+ * Enregistre l'identité légale de l'organisation (raison sociale, SIREN, adresse, contacts).
+ *
+ * Passe par la session de l'utilisateur : la RLS (`can_manage_organization`) autorise le
+ * super admin, l'administrateur d'agence et le propriétaire titulaire de l'organisation.
+ * Un UPDATE bloqué par la RLS ne lève rien — on vérifie donc qu'une ligne a bien été touchée.
+ */
+export async function saveOrganizationLegalIdentity(input: OrganizationLegalIdentityInput) {
+  const supabase = await createClient();
+  const applied = await supabase
+    .from("organizations")
+    .update({
+      legal_name: clean(input.legal_name),
+      siren: clean(input.siren),
+      address_line1: clean(input.address_line1),
+      address_line2: clean(input.address_line2),
+      postal_code: clean(input.postal_code),
+      city: clean(input.city),
+      contact_email: clean(input.contact_email),
+      contact_phone: clean(input.contact_phone),
+      updated_at: new Date().toISOString(),
+    } as never)
+    .eq("id", input.organization_id)
+    .is("archived_at", null)
+    .select("id");
+  if (applied.error) throw applied.error;
+  if (!applied.data?.length) {
+    throw new Error("Identité non enregistrée : vous ne gérez pas cette organisation.");
+  }
+  return getOrganizationBranding(input.organization_id);
 }
 
 export async function getOrganizationBranding(organizationId?: string): Promise<OrganizationBranding> {
@@ -58,13 +125,10 @@ export async function getOrganizationBranding(organizationId?: string): Promise<
     support_email: stringOrNull(branding.support_email),
     support_phone: stringOrNull(branding.support_phone),
     opening_hours: stringOrNull(branding.opening_hours),
-    legal_name: stringOrNull(branding.legal_name),
-    address_line1: stringOrNull(branding.address_line1),
-    postal_code: stringOrNull(branding.postal_code),
-    city: stringOrNull(branding.city),
     primary_color: stringOrNull(branding.primary_color),
     official_signature: stringOrNull(branding.official_signature),
     updated_at: stringOrNull(branding.updated_at),
+    legal: identiteDepuis(organization),
   };
 }
 
@@ -102,10 +166,6 @@ export async function saveOrganizationBranding(input: OrganizationBrandingInput)
         support_email: null,
         support_phone: null,
         opening_hours: null,
-        legal_name: null,
-        address_line1: null,
-        postal_code: null,
-        city: null,
         primary_color: null,
         official_signature: null,
       }
@@ -119,10 +179,6 @@ export async function saveOrganizationBranding(input: OrganizationBrandingInput)
         support_email: clean(input.support_email),
         support_phone: clean(input.support_phone),
         opening_hours: clean(input.opening_hours),
-        legal_name: clean(input.legal_name),
-        address_line1: clean(input.address_line1),
-        postal_code: clean(input.postal_code),
-        city: clean(input.city),
         primary_color: clean(input.primary_color),
         official_signature: clean(input.official_signature),
       };
