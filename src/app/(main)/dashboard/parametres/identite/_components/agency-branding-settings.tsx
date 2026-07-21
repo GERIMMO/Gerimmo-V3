@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { OrganizationBranding } from "@/types/organization-branding";
+import type { OrganizationBranding, OrganizationLegalIdentity } from "@/types/organization-branding";
 
 type OrganizationOption = { id: string; name: string };
 
@@ -29,7 +29,9 @@ export function AgencyBrandingSettings({
 }) {
   const router = useRouter();
   const [form, setForm] = useState(initialBranding);
+  const [legal, setLegal] = useState(initialBranding.legal);
   const [saving, setSaving] = useState(false);
+
   const displayedName = form.branding_enabled && form.display_name?.trim() ? form.display_name : "GERIMMO";
   const welcome =
     form.branding_enabled && form.welcome_message?.trim()
@@ -38,30 +40,44 @@ export function AgencyBrandingSettings({
   const signature =
     form.branding_enabled && form.support_signature?.trim() ? form.support_signature : `L equipe ${displayedName}`;
 
-  function update(field: keyof OrganizationBranding, value: string | boolean) {
+  function updateBranding(field: keyof OrganizationBranding, value: string | boolean) {
     setForm((current) => ({ ...current, [field]: value }));
   }
+  function updateLegal(field: keyof OrganizationLegalIdentity, value: string) {
+    setLegal((current) => ({ ...current, [field]: value }));
+  }
 
-  async function save(restore = false) {
+  async function envoyer(body: Record<string, unknown>, succes: string) {
     setSaving(true);
     const response = await fetch("/api/bot/branding", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...form, restore }),
+      body: JSON.stringify(body),
     });
     const payload = (await response.json()) as OrganizationBranding & { message?: string };
     setSaving(false);
-    if (!response.ok) return toast.error(payload.message ?? "Enregistrement impossible.");
+    if (!response.ok) {
+      toast.error(payload.message ?? "Enregistrement impossible.");
+      return;
+    }
     setForm(payload);
-    toast.success(restore ? "Identite GERIMMO restauree." : "Personnalisation enregistree.");
+    setLegal(payload.legal);
+    toast.success(succes);
   }
+
+  const saveIdentite = () =>
+    envoyer({ section: "identite", organization_id: form.organization_id, ...legal }, "Identité légale enregistrée.");
+  const saveBranding = (restore = false) =>
+    envoyer({ ...form, restore }, restore ? "Identité GERIMMO restaurée." : "Personnalisation enregistrée.");
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 md:p-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-heading font-semibold text-xl tracking-normal">Identite de l agence</h1>
-          <p className="text-muted-foreground text-sm">Personnalisation des messages de l agence.</p>
+          <h1 className="font-heading font-semibold text-xl tracking-normal">Identité de l organisation</h1>
+          <p className="text-muted-foreground text-sm">
+            Coordonnées reprises sur vos documents, et personnalisation du bot pour les agences.
+          </p>
         </div>
         {organizations.length > 1 ? (
           <div className="w-full max-w-xs space-y-1.5">
@@ -85,26 +101,86 @@ export function AgencyBrandingSettings({
         ) : null}
       </div>
 
+      {/* Identité légale — pour tous : agences ET propriétaires. C'est elle qui figure en
+          tête des quittances et courriers. */}
+      <section className="space-y-4 rounded-lg border bg-card p-4">
+        <div>
+          <div className="font-medium text-sm">Identité légale</div>
+          <div className="text-muted-foreground text-xs">
+            Figure sur les quittances, relances et mises en demeure comme bailleur ou mandataire.
+          </div>
+        </div>
+        <Separator />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Field label="Raison sociale">
+            <Input value={legal.legal_name ?? ""} onChange={(event) => updateLegal("legal_name", event.target.value)} />
+          </Field>
+          <Field label="SIREN / SIRET">
+            <Input value={legal.siren ?? ""} onChange={(event) => updateLegal("siren", event.target.value)} />
+          </Field>
+          <Field label="Adresse" className="md:col-span-2">
+            <Input
+              value={legal.address_line1 ?? ""}
+              onChange={(event) => updateLegal("address_line1", event.target.value)}
+            />
+          </Field>
+          <Field label="Complément d adresse" className="md:col-span-2">
+            <Input
+              value={legal.address_line2 ?? ""}
+              onChange={(event) => updateLegal("address_line2", event.target.value)}
+            />
+          </Field>
+          <Field label="Code postal">
+            <Input
+              value={legal.postal_code ?? ""}
+              onChange={(event) => updateLegal("postal_code", event.target.value)}
+            />
+          </Field>
+          <Field label="Ville">
+            <Input value={legal.city ?? ""} onChange={(event) => updateLegal("city", event.target.value)} />
+          </Field>
+          <Field label="E-mail de contact">
+            <Input
+              type="email"
+              value={legal.contact_email ?? ""}
+              onChange={(event) => updateLegal("contact_email", event.target.value)}
+            />
+          </Field>
+          <Field label="Téléphone de contact">
+            <Input
+              value={legal.contact_phone ?? ""}
+              onChange={(event) => updateLegal("contact_phone", event.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="flex justify-end">
+          <Button type="button" disabled={saving} onClick={() => saveIdentite()}>
+            <Save data-icon="inline-start" />
+            Enregistrer l identité
+          </Button>
+        </div>
+      </section>
+
       <div className="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <section className="space-y-4 rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <div className="font-medium text-sm">Activer l identite de l agence</div>
+              <div className="font-medium text-sm">Apparence du bot</div>
               <div className="text-muted-foreground text-xs">
-                Disponible uniquement pour une agence immobiliere reconnue.
+                Logo, couleur et messages affichés à vos clients. Réservé aux agences.
               </div>
             </div>
             <Switch
               checked={form.branding_enabled}
               disabled={!form.is_agency}
-              onCheckedChange={(checked) => update("branding_enabled", checked)}
+              onCheckedChange={(checked) => updateBranding("branding_enabled", checked)}
               aria-label="Activer la personnalisation"
             />
           </div>
 
           {!form.is_agency ? (
             <div className="rounded-md border border-dashed p-3 text-muted-foreground text-sm">
-              Cette organisation utilise obligatoirement l identite GERIMMO.
+              L apparence du bot utilise l identité GERIMMO. Votre identité légale ci-dessus reste, elle, la vôtre.
             </div>
           ) : null}
 
@@ -112,89 +188,71 @@ export function AgencyBrandingSettings({
 
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Nom commercial">
-              <Input value={form.display_name ?? ""} onChange={(event) => update("display_name", event.target.value)} />
-            </Field>
-            <Field label="Raison sociale">
-              <Input value={form.legal_name ?? ""} onChange={(event) => update("legal_name", event.target.value)} />
+              <Input
+                value={form.display_name ?? ""}
+                onChange={(event) => updateBranding("display_name", event.target.value)}
+              />
             </Field>
             <Field label="Logo (URL)">
-              <Input value={form.logo_url ?? ""} onChange={(event) => update("logo_url", event.target.value)} />
+              <Input value={form.logo_url ?? ""} onChange={(event) => updateBranding("logo_url", event.target.value)} />
             </Field>
             <Field label="E-mail d assistance">
               <Input
                 type="email"
                 value={form.support_email ?? ""}
-                onChange={(event) => update("support_email", event.target.value)}
+                onChange={(event) => updateBranding("support_email", event.target.value)}
               />
             </Field>
-            <Field label="Telephone d assistance">
+            <Field label="Téléphone d assistance">
               <Input
                 value={form.support_phone ?? ""}
-                onChange={(event) => update("support_phone", event.target.value)}
+                onChange={(event) => updateBranding("support_phone", event.target.value)}
               />
             </Field>
-            <Field label="Horaires de contact" className="md:col-span-2">
+            <Field label="Horaires de contact">
               <Input
                 value={form.opening_hours ?? ""}
-                onChange={(event) => update("opening_hours", event.target.value)}
+                onChange={(event) => updateBranding("opening_hours", event.target.value)}
               />
-            </Field>
-            <Field label="Adresse" className="md:col-span-2">
-              <Input
-                value={form.address_line1 ?? ""}
-                onChange={(event) => update("address_line1", event.target.value)}
-              />
-            </Field>
-            <Field label="Code postal">
-              <Input value={form.postal_code ?? ""} onChange={(event) => update("postal_code", event.target.value)} />
-            </Field>
-            <Field label="Ville">
-              <Input value={form.city ?? ""} onChange={(event) => update("city", event.target.value)} />
             </Field>
             <Field label="Couleur principale">
               <Input
                 type="color"
                 value={form.primary_color ?? "#244a7c"}
-                onChange={(event) => update("primary_color", event.target.value)}
-              />
-            </Field>
-            <Field label="Signature officielle">
-              <Input
-                value={form.official_signature ?? ""}
-                onChange={(event) => update("official_signature", event.target.value)}
+                onChange={(event) => updateBranding("primary_color", event.target.value)}
               />
             </Field>
             <Field label="Formule d accueil" className="md:col-span-2">
               <Textarea
                 rows={2}
                 value={form.welcome_message ?? ""}
-                onChange={(event) => update("welcome_message", event.target.value)}
+                onChange={(event) => updateBranding("welcome_message", event.target.value)}
               />
             </Field>
             <Field label="Signature" className="md:col-span-2">
               <Textarea
                 rows={2}
                 value={form.support_signature ?? ""}
-                onChange={(event) => update("support_signature", event.target.value)}
+                onChange={(event) => updateBranding("support_signature", event.target.value)}
               />
             </Field>
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="outline" disabled={saving} onClick={() => save(true)}>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => saveBranding(true)}>
               <RotateCcw data-icon="inline-start" />
               Restaurer GERIMMO
             </Button>
-            <Button type="button" disabled={saving || !form.is_agency} onClick={() => save()}>
+            <Button type="button" disabled={saving || !form.is_agency} onClick={() => saveBranding()}>
               <Save data-icon="inline-start" />
-              Enregistrer
+              Enregistrer l apparence
             </Button>
           </div>
         </section>
 
         <aside className="space-y-3 rounded-lg border bg-card p-4">
           <div className="flex items-center justify-between gap-2">
-            <div className="font-medium text-sm">Apercu dans le bot</div>
+            <div className="font-medium text-sm">Aperçu dans le bot</div>
             <Badge variant={form.branding_enabled && form.is_agency ? "default" : "secondary"}>
               {form.branding_enabled && form.is_agency ? "Agence" : "GERIMMO"}
             </Badge>
@@ -209,7 +267,7 @@ export function AgencyBrandingSettings({
               </Avatar>
               <div>
                 <div className="font-medium text-sm">{displayedName}</div>
-                <div className="text-muted-foreground text-xs">Assistance immobiliere</div>
+                <div className="text-muted-foreground text-xs">Assistance immobilière</div>
               </div>
             </div>
             <div className="rounded-md bg-background p-3 text-sm shadow-xs">
