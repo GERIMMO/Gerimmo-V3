@@ -6,6 +6,7 @@ import {
   BLEU,
   BLEU_PALE,
   CONTENU,
+  dessinerEntete,
   ENCRE,
   formaterEuros,
   formaterEurosTexte,
@@ -49,6 +50,7 @@ export type MiseEnDemeureData = {
   relancesLe: string[];
   delaiJours: number;
   lieuEtDate: string;
+  logo?: Uint8Array | null;
 };
 
 export function objetMiseEnDemeure(periodeLabel: string) {
@@ -66,27 +68,21 @@ export async function buildMiseEnDemeurePdf(data: MiseEnDemeureData): Promise<Ui
   const page = pdf.addPage([LARGEUR, HAUTEUR]);
   const normale = await pdf.embedFont(StandardFonts.Helvetica);
   const grasse = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const { texte, largeurTexte } = outilsDePage(page, normale, grasse);
+  const outils = outilsDePage(page, normale, grasse);
+  const { texte, largeurTexte } = outils;
 
-  // ── Bandeau rouge : ce courrier ne doit pas se confondre avec une relance ─────────
-  const hauteurBandeau = 74;
-  page.drawRectangle({ x: 0, y: HAUTEUR - hauteurBandeau, width: LARGEUR, height: hauteurBandeau, color: ROUGE });
-  texte("LOGEMENT CONCERNÉ", MARGE, HAUTEUR - 27, { taille: 7, gras: true, couleur: ROUGE_PALE });
-  let ligneEnTete = HAUTEUR - 44;
-  for (const ligne of data.logement.slice(0, 2)) {
-    texte(ligne, MARGE, ligneEnTete, { taille: 12.5, gras: true, couleur: BLANC });
-    ligneEnTete -= 16;
-  }
-  const titre = "MISE EN DEMEURE";
-  texte(titre, LARGEUR - MARGE - largeurTexte(titre, 13.5, true), HAUTEUR - 34, {
-    taille: 13.5,
-    gras: true,
-    couleur: BLANC,
+  await dessinerEntete(pdf, page, outils, {
+    couleur: ROUGE,
+    couleurPale: ROUGE_PALE,
+    intitule: "LOGEMENT CONCERNÉ",
+    lignes: data.logement,
+    titre: "MISE EN DEMEURE",
+    reference: data.reference,
+    tailleTitre: 13.5,
+    logo: data.logo,
   });
-  const ref = `Réf. ${data.reference}`;
-  texte(ref, LARGEUR - MARGE - largeurTexte(ref, 8), HAUTEUR - 50, { taille: 8, couleur: ROUGE_PALE });
 
-  let y = HAUTEUR - hauteurBandeau - 26;
+  let y = HAUTEUR - 74 - 26;
 
   // Mode d'acheminement : c'est lui qui donne sa force au courrier.
   const mention = "LETTRE RECOMMANDÉE AVEC ACCUSÉ DE RÉCEPTION";

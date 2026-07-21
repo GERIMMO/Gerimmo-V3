@@ -6,6 +6,7 @@ import {
   BLEU,
   BLEU_PALE,
   CONTENU,
+  dessinerEntete,
   ENCRE,
   formaterEuros,
   formaterEurosTexte,
@@ -57,6 +58,7 @@ export type RelanceData = {
   /** Délai laissé au locataire pour régulariser, en jours. */
   delaiJours: number;
   lieuEtDate: string;
+  logo?: Uint8Array | null;
 };
 
 /**
@@ -85,26 +87,20 @@ export async function buildRelancePdf(data: RelanceData): Promise<Uint8Array> {
   const page = pdf.addPage([LARGEUR, HAUTEUR]);
   const normale = await pdf.embedFont(StandardFonts.Helvetica);
   const grasse = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const { texte, largeurTexte } = outilsDePage(page, normale, grasse);
+  const outils = outilsDePage(page, normale, grasse);
+  const { texte, largeurTexte } = outils;
 
-  // ── Bandeau d'en-tête : le logement, comme sur la quittance ───────────────────────
-  const hauteurBandeau = 74;
-  page.drawRectangle({ x: 0, y: HAUTEUR - hauteurBandeau, width: LARGEUR, height: hauteurBandeau, color: BLEU });
-  texte("LOGEMENT CONCERNÉ", MARGE, HAUTEUR - 27, { taille: 7, gras: true, couleur: BLEU_PALE });
-  let ligneEnTete = HAUTEUR - 44;
-  for (const ligne of data.logement.slice(0, 2)) {
-    texte(ligne, MARGE, ligneEnTete, { taille: 12.5, gras: true, couleur: BLANC });
-    ligneEnTete -= 16;
-  }
-  texte(titre, LARGEUR - MARGE - largeurTexte(titre, 12.5, true), HAUTEUR - 34, {
-    taille: 12.5,
-    gras: true,
-    couleur: BLANC,
+  await dessinerEntete(pdf, page, outils, {
+    couleur: BLEU,
+    couleurPale: BLEU_PALE,
+    intitule: "LOGEMENT CONCERNÉ",
+    lignes: data.logement,
+    titre,
+    reference: data.reference,
+    logo: data.logo,
   });
-  const ref = `Réf. ${data.reference}`;
-  texte(ref, LARGEUR - MARGE - largeurTexte(ref, 8), HAUTEUR - 50, { taille: 8, couleur: BLEU_PALE });
 
-  let y = HAUTEUR - hauteurBandeau - 34;
+  let y = HAUTEUR - 74 - 34;
 
   // ── Les deux parties ──────────────────────────────────────────────────────────────
   const largeurBloc = (CONTENU - 18) / 2;
