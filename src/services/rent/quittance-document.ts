@@ -1,6 +1,7 @@
 import { buildQuittancePdf } from "@/lib/pdf/quittance";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { chargerLogoOrganisation } from "@/services/rent/logo-organisation";
+import { chargerSignatureOrganisation } from "@/services/rent/signature-organisation";
 
 /**
  * Génère le fichier PDF d'une quittance et le dépose dans le stockage.
@@ -23,6 +24,8 @@ export type QuittanceContexte = {
   dateReglement: Date;
   reference: string;
   storagePath: string;
+  /** Apposer la signature manuscrite de l'organisation (choix document par document). */
+  signer?: boolean;
 };
 
 function lignesAdresse(source: {
@@ -51,7 +54,7 @@ export function libelleMois(periodMonth: string) {
 export async function genererQuittancePdf(contexte: QuittanceContexte) {
   const admin = createAdminClient();
 
-  const [organisation, bien, logo] = await Promise.all([
+  const [organisation, bien, logo, signature] = await Promise.all([
     admin
       .from("organizations")
       .select("name,legal_name,siren,address_line1,address_line2,postal_code,city")
@@ -59,6 +62,7 @@ export async function genererQuittancePdf(contexte: QuittanceContexte) {
       .maybeSingle(),
     admin.from("biens").select("address_line1,postal_code,city,name,reference").eq("id", contexte.bienId).maybeSingle(),
     chargerLogoOrganisation(contexte.organizationId),
+    contexte.signer ? chargerSignatureOrganisation(contexte.organizationId) : Promise.resolve(null),
   ]);
   if (organisation.error) throw organisation.error;
   if (bien.error) throw bien.error;
@@ -88,6 +92,7 @@ export async function genererQuittancePdf(contexte: QuittanceContexte) {
     dateReglement: jourMois(contexte.dateReglement),
     lieuEtDate: `Fait le ${jourMois(new Date())}`,
     logo,
+    signature,
   });
 
   const upload = await admin.storage.from(BUCKET).upload(contexte.storagePath, octets, {

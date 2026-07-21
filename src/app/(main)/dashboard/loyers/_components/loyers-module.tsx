@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import { AlertTriangle, Check, FileCheck2, RefreshCw, Send, X } from "lucide-react";
+import { AlertTriangle, Check, FileCheck2, PenLine, RefreshCw, Send, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -35,12 +35,19 @@ function frDate(value: string) {
   return new Date(value).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
 }
 
-export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow[] }) {
+export function LoyersModule({
+  initialPeriods,
+  signableOrganizations = [],
+}: {
+  initialPeriods: RentPeriodRow[];
+  signableOrganizations?: string[];
+}) {
   const [periods, setPeriods] = useState(initialPeriods);
   const [pending, setPending] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [validating, setValidating] = useState<string | null>(null);
   const [reminding, setReminding] = useState<string | null>(null);
+  const signable = new Set(signableOrganizations);
 
   async function refresh() {
     const response = await fetch("/api/rent");
@@ -81,12 +88,12 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
     await refresh();
   }
 
-  async function validateQuittance(periodId: string) {
+  async function validateQuittance(periodId: string, sign = false) {
     setValidating(periodId);
     const response = await fetch("/api/rent/quittance", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ periodId }),
+      body: JSON.stringify({ periodId, sign }),
     });
     setValidating(null);
     if (!response.ok) {
@@ -97,7 +104,8 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
     setPeriods((current) =>
       current.map((period) => (period.id === periodId ? { ...period, quittance_status } : period)),
     );
-    toast.success(emailed ? "Quittance validée et envoyée au locataire." : "Quittance validée et disponible.");
+    const suffix = emailed ? "et envoyée au locataire" : "et disponible";
+    toast.success(sign ? `Quittance signée, validée ${suffix}.` : `Quittance validée ${suffix}.`);
   }
 
   async function remind(periodId: string) {
@@ -177,16 +185,29 @@ export function LoyersModule({ initialPeriods }: { initialPeriods: RentPeriodRow
                 </TableCell>
                 <TableCell>
                   {period.quittance_status === "a_valider" ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={validating === period.id}
-                      onClick={() => validateQuittance(period.id)}
-                    >
-                      <FileCheck2 data-icon="inline-start" />
-                      Valider
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      {signable.has(period.organization_id) ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={validating === period.id}
+                          onClick={() => validateQuittance(period.id, true)}
+                        >
+                          <PenLine data-icon="inline-start" />
+                          Signer et valider
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={validating === period.id}
+                        onClick={() => validateQuittance(period.id, false)}
+                      >
+                        <FileCheck2 data-icon="inline-start" />
+                        {signable.has(period.organization_id) ? "Valider sans signer" : "Valider"}
+                      </Button>
+                    </div>
                   ) : period.quittance_status === "validee" ? (
                     <Badge variant="secondary">Validée</Badge>
                   ) : period.quittance_status === "envoyee" ? (

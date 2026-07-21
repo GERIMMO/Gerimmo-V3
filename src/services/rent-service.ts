@@ -3,6 +3,7 @@ import { objetRelance } from "@/lib/pdf/relance-loyer";
 import { createClient } from "@/lib/supabase/server";
 import { contactGestionnaire, genererCourrierImpaye, jourMois } from "@/services/rent/courrier-document";
 import { genererQuittancePdf } from "@/services/rent/quittance-document";
+import { chargerSignatureOrganisation } from "@/services/rent/signature-organisation";
 
 type UserClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -86,6 +87,21 @@ export async function listRentPeriods(): Promise<RentPeriodRow[]> {
       quittance_status: record.quittance_status,
     };
   });
+}
+
+/**
+ * Organisations visibles disposant d'une signature manuscrite déposée. Sert à n'afficher le
+ * bouton « Signer et valider » que là où une signature existe réellement.
+ */
+export async function listSignableOrganizations(): Promise<string[]> {
+  const supabase = await createClient();
+  const result = await supabase
+    .from("organization_branding" as never)
+    .select("organization_id,signature_path")
+    .not("signature_path", "is", null)
+    .is("archived_at", null);
+  if (result.error) throw result.error;
+  return ((result.data ?? []) as unknown as Array<{ organization_id: string }>).map((row) => row.organization_id);
 }
 
 type ConfirmedPeriod = {
@@ -215,31 +231,110 @@ async function generateQuittanceForPeriod(supabase: UserClient, period: Confirme
 }
 
 /**
+ * Régénère le PDF d'une quittance avec la signature manuscrite de l'organisation, au même
+ * emplacement de stockage (le document et son lien ne changent pas, seul le fichier est
+ * remplacé). Échoue si aucune signature n'est déposée : signer était un choix explicite, on ne
+ * le transforme pas en quittance vierge sans le dire.
+ */
+async function signQuittanceForPeriod(
+  supabase: UserClient,
+  period: {
+    id: string;
+    organization_id: string;
+    bien_id: string;
+    tenant_name: string | null;
+    amount_cents: number;
+    rent_cents: number | null;
+    charges_cents: number;
+    period_month: string;
+    quittance_document_id: string | null;
+  },
+) {
+  if (!period.quittance_document_id) throw new Error("Quittance introuvable : rien à signer.");
+
+  const signature = await chargerSignatureOrganisation(period.organization_id);
+  if (!signature) {
+    throw new Error("Aucune signature enregistrée : déposez-la dans Paramètres › Identité avant de signer.");
+  }
+
+  // On réutilise le chemin et la référence déjà portés par le document : le fichier signé
+  // remplace l'ancien (upsert), sans créer de doublon ni casser le lien avec la période.
+  const document = await supabase
+    .from("documents")
+    .select("storage_path,reference")
+    .eq("id", period.quittance_document_id)
+    .maybeSingle();
+  if (document.error) throw document.error;
+  const infos = document.data as unknown as { storage_path: string | null; reference: string | null } | null;
+  if (!infos?.storage_path) throw new Error("Le fichier de la quittance est introuvable : signature impossible.");
+
+  const reference =
+    infos.reference ?? `QUIT-${period.period_month.replace(/-/g, "").slice(0, 6)}-${period.id.slice(0, 8)}`;
+  const fichier = await genererQuittancePdf({
+    periodId: period.id,
+    organizationId: period.organization_id,
+    bienId: period.bien_id,
+    tenantName: period.tenant_name,
+    periodMonth: period.period_month,
+    rentCents: period.rent_cents ?? period.amount_cents,
+    chargesCents: period.charges_cents,
+    dateReglement: new Date(),
+    reference,
+    storagePath: infos.storage_path,
+    signer: true,
+  });
+
+  const enregistre = await supabase
+    .from("documents")
+    .update({ file_size_bytes: fichier.taille } as never)
+    .eq("id", period.quittance_document_id)
+    .select("id");
+  if (enregistre.error) throw enregistre.error;
+  if (!enregistre.data?.length) {
+    throw new Error("Quittance signée mais la mise à jour du document a échoué.");
+  }
+}
+
+/**
  * Valide la quittance : rend le document actif (visible au locataire) et prépare l'envoi e-mail
  * (file document_email_outbox, consommée par n8n). 'envoyee' si un e-mail a pu être mis en file,
  * sinon 'validee' (document tout de même disponible).
  */
-export async function validateQuittance(input: { periodId: string }) {
+export async function validateQuittance(input: { periodId: string; sign?: boolean }) {
   const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) throw new Error("Authentification requise.");
 
   const periodResult = await supabase
     .from("rent_periods" as never)
-    .select("id,organization_id,tenant_profile_id,quittance_document_id,quittance_status,period_month")
+    .select(
+      "id,organization_id,bien_id,tenant_profile_id,tenant_name,amount_cents,rent_cents,charges_cents,quittance_document_id,quittance_status,period_month",
+    )
     .eq("id", input.periodId)
     .maybeSingle();
   if (periodResult.error) throw periodResult.error;
   const period = periodResult.data as unknown as {
     id: string;
     organization_id: string;
+    bien_id: string;
     tenant_profile_id: string | null;
+    tenant_name: string | null;
+    amount_cents: number;
+    rent_cents: number | null;
+    charges_cents: number;
     quittance_document_id: string | null;
     quittance_status: string;
     period_month: string;
   } | null;
   if (!period || period.quittance_status !== "a_valider" || !period.quittance_document_id) {
     throw new Error("Aucune quittance à valider pour ce loyer.");
+  }
+
+  // Signature à la demande, document par document : on régénère le PDF au même emplacement,
+  // cette fois avec la signature manuscrite incrustée. Refusé s'il n'y a pas de signature
+  // déposée, plutôt que de valider en silence une quittance restée vierge.
+  if (input.sign) {
+    await signQuittanceForPeriod(supabase, period);
   }
 
   // Le document DOIT devenir actif : c'est ce qui le rend visible au locataire. Un refus
